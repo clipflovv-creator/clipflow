@@ -1,0 +1,130 @@
+/**
+ * Client-Side Video & Audio Export Processing Engine
+ * 
+ * Performs 100% in-browser video trimming, audio extraction & encoding,
+ * aspect ratio cropping (9:16, 1:1, 4:5), and MP4 muxing using in-browser
+ * WebAssembly FFmpeg with ZERO server bandwidth and ZERO frame-breaking artifacts.
+ */
+
+import { findBestTracks } from './clientMediaRangeFetcher';
+import { ClientFFmpegEngine } from './clientFFmpegEngine';
+
+export interface ClientExportOptions {
+  metadata: any;
+  trimStart: number;
+  trimEnd?: number;
+  format?: 'mp4' | 'mp3' | 'wav' | 'm4a' | 'captions' | string;
+  quality?: string;
+  audioQuality?: string;
+  aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5' | 'custom' | string;
+  cropBox?: { x: number; y: number; width: number; height: number };
+  fitMode?: 'crop' | 'pad';
+  customFileName?: string;
+  onProgress?: (phase: string, percent?: number) => void;
+}
+
+export interface ClientExportResult {
+  blob: Blob;
+  fileName: string;
+  url: string;
+  sizeBytes: number;
+}
+
+/**
+ * Triggers a native browser file download from a Blob or URL.
+ */
+export function triggerBrowserDownload(data: Blob | string, fileName: string) {
+  const url = typeof data === 'string' ? data : URL.createObjectURL(data);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    if (typeof data !== 'string') {
+      URL.revokeObjectURL(url);
+    }
+  }, 2000);
+}
+
+export class ClientVideoExportEngine {
+  /**
+   * Main entry point for exporting a clip directly on the user's device.
+   * Utilizes client-side FFmpeg WebAssembly for lossless cuts, zero frame tears,
+   * and synchronized audio.
+   */
+  static async exportClip(options: ClientExportOptions): Promise<ClientExportResult> {
+    const {
+      metadata,
+      trimStart = 0,
+      trimEnd,
+      format = 'mp4',
+      quality = '1080p',
+      aspectRatio = '16:9',
+      cropBox,
+      customFileName,
+      onProgress,
+    } = options;
+
+    const totalDuration = metadata?.duration || 60;
+    const effectiveTrimEnd = typeof trimEnd === 'number' && trimEnd > trimStart ? trimEnd : totalDuration;
+
+    const safeTitle = (customFileName || metadata?.title || 'ClipFlow_Clip')
+      .replace(/[<>:"/\\|?*]+/g, '_')
+      .trim();
+
+    // Select the best direct video and audio tracks
+    const tracks = findBestTracks(metadata, quality);
+
+    const videoStreamUrl = tracks.videoFormat?.url || tracks.combinedFormat?.url || metadata?.direct_stream_url || metadata?.url;
+    let audioStreamUrl = tracks.audioFormat?.url || (tracks.combinedFormat ? tracks.combinedFormat.url : null);
+
+    // If audioStreamUrl points to the exact same file as videoStreamUrl,
+    // the single file already contains both video and audio tracks.
+    if (audioStreamUrl === videoStreamUrl) {
+      audioStreamUrl = null;
+    }
+
+    if (onProgress) onProgress('🚀 Initializing in-browser FFmpeg engine...', 5);
+
+    const isAudioOnly = format === 'mp3' || format === 'wav' || format === 'm4a';
+    const effectiveFormat = isAudioOnly ? format : 'mp4';
+    const finalExt = isAudioOnly ? (format === 'mp3' ? 'wav' : format) : 'mp4';
+    const finalFileName = `${safeTitle}.${finalExt}`;
+
+    // Delegate processing to in-browser FFmpeg engine
+    const result = await ClientFFmpegEngine.processClip({
+      videoUrl: videoStreamUrl,
+      audioUrl: audioStreamUrl,
+      trimStart,
+      trimEnd: effectiveTrimEnd,
+      format: effectiveFormat,
+      quality,
+      aspectRatio,
+      cropBox: aspectRatio === 'custom' ? cropBox : undefined,
+      duration: totalDuration,
+      videoFileSize: tracks.videoFormat?.filesize,
+      audioFileSize: tracks.audioFormat?.filesize,
+      videoBitrate: tracks.videoFormat?.tbr || tracks.videoFormat?.vbr,
+      onProgress: (stage, percent) => {
+        if (onProgress) onProgress(stage, percent);
+      },
+    });
+
+    const downloadUrl = URL.createObjectURL(result.blob);
+
+    if (onProgress) onProgress('✅ Complete! Downloading your clip...', 100);
+
+    // Automatically trigger native browser download
+    triggerBrowserDownload(result.blob, finalFileName);
+
+    return {
+      blob: result.blob,
+      fileName: finalFileName,
+      url: downloadUrl,
+      sizeBytes: result.sizeBytes,
+    };
+  }
+}
