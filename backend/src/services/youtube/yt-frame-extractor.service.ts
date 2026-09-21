@@ -36,6 +36,7 @@ export interface YouTubeFrameOptions {
   cacheDir: string;
   ytDlpBin: string;
   ffmpegBin: string;
+  streamUrl?: string;
 }
 
 export class YouTubeFrameExtractorService {
@@ -52,6 +53,7 @@ export class YouTubeFrameExtractorService {
       cacheDir,
       ytDlpBin,
       ffmpegBin,
+      streamUrl,
     } = options;
 
     const isPng = format.toLowerCase() === 'png';
@@ -96,25 +98,54 @@ export class YouTubeFrameExtractorService {
     const vfOption = cropFilter ? `-vf "${cropFilter}"` : '';
     const qOption = isPng ? '' : '-q:v 1';
 
-    // Download small 1.5s segment via native yt-dlp at exact source resolution and extract frame
+    // 1. Fast Path: If a direct streamUrl is already available, extract directly with FFmpeg
+    if (streamUrl) {
+      try {
+        const coarseSeek = Math.max(0, timestamp - 2);
+        const fineSeek = timestamp - coarseSeek;
+        await execAsync(`"${ffmpegBin}" -ss ${coarseSeek} -i "${streamUrl}" -ss ${fineSeek} -frames:v 1 -update 1 ${qOption} ${vfOption} -y "${framePath}"`, { timeout: 15000 });
+        if (fs.existsSync(framePath) && fs.statSync(framePath).size > 1000) {
+          scheduleCleanup(framePath, 2 * 60 * 60 * 1000);
+          return { filePath: framePath, ext, isPng, fromCache: false };
+        }
+      } catch (ffErr: any) {
+        console.warn('[YouTubeFrameExtractorService] Direct stream URL extraction failed, falling back to yt-dlp:', ffErr.message);
+      }
+    }
+
+    // 2. Resolve direct video stream URL using yt-dlp and extract with FFmpeg
+    try {
+      const formatSelector = `bestvideo[height<=${heightLimit}]/best[height<=${heightLimit}]/best`;
+      const { stdout } = await execAsync(`"${ytDlpBin}" --get-url --no-warnings --no-check-certificate -f "${formatSelector}" "${url}"`, { timeout: 20000 });
+      const directUrl = stdout.trim().split('\n').filter(Boolean)[0]?.trim();
+      if (directUrl) {
+        const coarseSeek = Math.max(0, timestamp - 2);
+        const fineSeek = timestamp - coarseSeek;
+        await execAsync(`"${ffmpegBin}" -ss ${coarseSeek} -i "${directUrl}" -ss ${fineSeek} -frames:v 1 -update 1 ${qOption} ${vfOption} -y "${framePath}"`, { timeout: 15000 });
+        if (fs.existsSync(framePath) && fs.statSync(framePath).size > 1000) {
+          scheduleCleanup(framePath, 2 * 60 * 60 * 1000);
+          return { filePath: framePath, ext, isPng, fromCache: false };
+        }
+      }
+    } catch (streamResolveErr: any) {
+      console.warn('[YouTubeFrameExtractorService] Fast stream resolution warning, falling back to segment:', streamResolveErr.message);
+    }
+
+    // 3. Fallback: Download small 1.5s video segment via native yt-dlp and extract frame
     const tempSeg = path.join(cacheDir, `seg_${hash}.mp4`);
     const startSec = Math.max(0, timestamp - 0.3);
     const endSec = timestamp + 1.5;
     const cookiesFile = findCookiesFile();
-    const cookieFlag = cookiesFile ? `--cookies "${cookiesFile}"` : '';
     const buildFrameCmd = (useCookies: boolean) => [
       `"${ytDlpBin}"`,
       `--ffmpeg-location "${path.dirname(ffmpegBin)}"`,
-      '--js-runtimes node',
-      '--extractor-args "youtube:player_client=mweb,web"',
       '--no-warnings',
       '--no-check-certificate',
       useCookies && cookiesFile ? `--cookies "${cookiesFile}"` : '',
       '--no-playlist',
       `--download-sections "*${startSec}-${endSec}"`,
       '--force-keyframes-at-cuts',
-      `-f "bestvideo[height<=${heightLimit}]+bestaudio/best[height<=${heightLimit}]/best"`,
-      `--merge-output-format mp4`,
+      `-f "bestvideo[height<=${heightLimit}]/best[height<=${heightLimit}]/best"`,
       `-o "${tempSeg}"`,
       `"${url}"`,
     ].filter(Boolean).join(' ');
@@ -123,16 +154,16 @@ export class YouTubeFrameExtractorService {
       await execAsync(buildFrameCmd(Boolean(cookiesFile)), { timeout: 35000 });
       if (fs.existsSync(tempSeg)) {
         const offsetSeek = Math.max(0, timestamp - startSec);
-        await execAsync(`"${ffmpegBin}" -ss ${offsetSeek} -i "${tempSeg}" -frames:v 1 ${qOption} ${vfOption} -y "${framePath}"`);
+        await execAsync(`"${ffmpegBin}" -ss ${offsetSeek} -i "${tempSeg}" -frames:v 1 -update 1 ${qOption} ${vfOption} -y "${framePath}"`);
         scheduleCleanup(tempSeg, 30000);
       }
     } catch (e: any) {
-      console.warn('[YouTubeFrameExtractorService] Fast segment extraction warning, retrying without cookies or full fallback:', e.message);
+      console.warn('[YouTubeFrameExtractorService] Fast segment extraction warning, retrying without cookies:', e.message);
       try {
         await execAsync(buildFrameCmd(false), { timeout: 35000 });
         if (fs.existsSync(tempSeg)) {
           const offsetSeek = Math.max(0, timestamp - startSec);
-          await execAsync(`"${ffmpegBin}" -ss ${offsetSeek} -i "${tempSeg}" -frames:v 1 ${qOption} ${vfOption} -y "${framePath}"`);
+          await execAsync(`"${ffmpegBin}" -ss ${offsetSeek} -i "${tempSeg}" -frames:v 1 -update 1 ${qOption} ${vfOption} -y "${framePath}"`);
           scheduleCleanup(tempSeg, 30000);
         }
       } catch (err: any) {

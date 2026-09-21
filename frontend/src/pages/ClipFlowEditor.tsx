@@ -642,7 +642,7 @@ export default function ClipFlowEditor() {
     }, 5000);
   };
 
-  // Thumbnail / Frame Snapshot Download
+  // Thumbnail / Frame Snapshot Download (PNG Only)
   const handleDownloadImage = async () => {
     if (isDownloadingImage) return;
     setIsDownloadingImage(true);
@@ -653,9 +653,61 @@ export default function ClipFlowEditor() {
       if (previewImageMode === 'thumbnail') {
         const thumbUrl = metadata?.thumbnail || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg` : '');
         if (!thumbUrl) throw new Error('No thumbnail available');
-        triggerNativeDownload(thumbUrl, `${cleanTitle}_thumbnail.jpg`);
-        setDownloadSuccess(true);
-        setTimeout(() => setDownloadSuccess(false), 2000);
+
+        let blob: Blob | null = null;
+        try {
+          const res = await fetch(thumbUrl, { mode: 'cors' });
+          if (res.ok) blob = await res.blob();
+        } catch {}
+
+        if (!blob) {
+          try {
+            const proxyUrl = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(thumbUrl)}`;
+            const res = await fetch(proxyUrl);
+            if (res.ok) blob = await res.blob();
+          } catch {}
+        }
+
+        if (blob) {
+          const bitmap = await createImageBitmap(blob);
+          const canvas = document.createElement('canvas');
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(bitmap, 0, 0);
+            const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+            if (pngBlob) {
+              triggerNativeDownload(pngBlob, `${cleanTitle}_thumbnail.png`);
+              setDownloadSuccess(true);
+              setTimeout(() => setDownloadSuccess(false), 2000);
+              return;
+            }
+          }
+        }
+
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => {
+            img.onerror = reject;
+            img.src = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(thumbUrl)}`;
+          };
+          img.src = thumbUrl;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 1280;
+        canvas.height = img.naturalHeight || 720;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0);
+        const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+        if (pngBlob) {
+          triggerNativeDownload(pngBlob, `${cleanTitle}_thumbnail.png`);
+          setDownloadSuccess(true);
+          setTimeout(() => setDownloadSuccess(false), 2000);
+          return;
+        }
       } else {
         const targetTime = currentTime;
         const timeStr = `${Math.floor(targetTime / 60)}m${Math.floor(targetTime % 60)}s`;
@@ -663,6 +715,37 @@ export default function ClipFlowEditor() {
         const cropSuffix = isCropped ? `_${aspectRatio.replace(':', 'x')}` : '';
         const fileName = `${cleanTitle}_frame_${timeStr}${cropSuffix}.png`;
 
+        // 1. Client-side canvas frame capture when HTML5 video is playing
+        if (videoElementRef.current && videoElementRef.current.videoWidth > 0) {
+          try {
+            const v = videoElementRef.current;
+            const canvas = document.createElement('canvas');
+            let sx = 0, sy = 0, sw = v.videoWidth, sh = v.videoHeight;
+            if (isCropped && cropBox) {
+              sx = Math.round(cropBox.x * v.videoWidth);
+              sy = Math.round(cropBox.y * v.videoHeight);
+              sw = Math.round(cropBox.width * v.videoWidth);
+              sh = Math.round(cropBox.height * v.videoHeight);
+            }
+            canvas.width = sw;
+            canvas.height = sh;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(v, sx, sy, sw, sh, 0, 0, sw, sh);
+              const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+              if (pngBlob) {
+                triggerNativeDownload(pngBlob, fileName);
+                setDownloadSuccess(true);
+                setTimeout(() => setDownloadSuccess(false), 2000);
+                return;
+              }
+            }
+          } catch (canvasErr) {
+            console.warn('[Client Canvas Frame Capture Warning, falling back to server]', canvasErr);
+          }
+        }
+
+        // 2. High-resolution server-side frame extraction (YouTube or direct stream)
         const cropParam = isCropped
           ? `&crop_x=${cropBox.x}&crop_y=${cropBox.y}&crop_w=${cropBox.width}&crop_h=${cropBox.height}`
           : '';
@@ -673,20 +756,18 @@ export default function ClipFlowEditor() {
           const localTime = +(targetTime - chunkOffset).toFixed(3);
           backendUrl = `${BACKEND_URL}/api/twitch-live/live-frame?url=${encodeURIComponent(activeUrl)}&chunkOffset=${chunkOffset}&localTime=${localTime}&globalTime=${targetTime}&quality=${encodeURIComponent(downloadQuality)}&download=true&format=png&title=${encodeURIComponent(cleanTitle)}${cropParam}`;
         } else {
-          backendUrl = `${BACKEND_URL}/api/video/frame?url=${encodeURIComponent(activeUrl)}&time=${targetTime}&quality=${encodeURIComponent(downloadQuality)}&download=true&fullRes=true&format=png&title=${encodeURIComponent(cleanTitle)}${cropParam}`;
+          const streamParam = rawPreviewSrc ? `&streamUrl=${encodeURIComponent(rawPreviewSrc)}` : '';
+          backendUrl = `${BACKEND_URL}/api/video/frame?url=${encodeURIComponent(activeUrl)}&time=${targetTime}&quality=${encodeURIComponent(downloadQuality)}&download=true&fullRes=true&format=png&title=${encodeURIComponent(cleanTitle)}${cropParam}${streamParam}`;
         }
 
-        try {
-          const res = await fetch(backendUrl);
-          if (res.ok) {
-            const blob = await res.blob();
-            triggerNativeDownload(blob, fileName);
-          } else {
-            triggerNativeDownload(backendUrl, fileName);
-          }
-        } catch {
-          triggerNativeDownload(backendUrl, fileName);
+        const res = await fetch(backendUrl);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Server failed to capture frame (HTTP ${res.status})`);
         }
+        const blob = await res.blob();
+        const pngBlob = blob.type === 'image/png' ? blob : new Blob([blob], { type: 'image/png' });
+        triggerNativeDownload(pngBlob, fileName);
         setDownloadSuccess(true);
         setTimeout(() => setDownloadSuccess(false), 2000);
       }

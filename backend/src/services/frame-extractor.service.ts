@@ -87,6 +87,7 @@ export class FrameExtractorService {
         cacheDir: CACHE_DIR,
         ytDlpBin: YTDLP_BIN,
         ffmpegBin: FFMPEG_BIN,
+        streamUrl,
       });
     }
 
@@ -170,6 +171,7 @@ export class FrameExtractorService {
         `-i "${directUrl}"`,
         `-ss ${fineSeek}`,
         '-frames:v 1',
+        '-update 1',
       ];
       if (qOption) opts.push(qOption);
       if (vfOption) opts.push(vfOption);
@@ -196,7 +198,7 @@ export class FrameExtractorService {
         await execAsync(ytDlpCmd, { timeout: 35000 });
         if (fs.existsSync(tempSeg)) {
           const offsetSeek = Math.max(0, timestamp - startSec);
-          await execAsync(`"${FFMPEG_BIN}" -ss ${offsetSeek} -i "${tempSeg}" -frames:v 1 ${qOption} ${vfOption} -y "${framePath}"`);
+          await execAsync(`"${FFMPEG_BIN}" -ss ${offsetSeek} -i "${tempSeg}" -frames:v 1 -update 1 ${qOption} ${vfOption} -y "${framePath}"`);
           scheduleCleanup(tempSeg, 30000);
         }
       } catch (segErr: any) {

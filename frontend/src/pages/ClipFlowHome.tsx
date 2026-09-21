@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import { AuthModal } from '../components/AuthModal';
 import { UserProfileMenu } from '../components/UserProfileMenu';
-// import { ClipDownloadModal } from '../components/ClipDownloadModal';
 import { setStoredProcessingMode } from '../utils/editorSession';
 
 // Use real server URL from env if deployed, otherwise fallback to localhost for dev
@@ -936,14 +935,6 @@ export default function ClipFlowHome() {
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
       />
-
-      {/* ── Clip Download Selection Modal (ON HOLD - routing directly to Pro) ───────────── */}
-      {/* <ClipDownloadModal
-        isOpen={isClipModalOpen}
-        onClose={() => setIsClipModalOpen(false)}
-        videoUrl={selectedClipUrl}
-        onOpenAuthModal={() => setShowAuthModal(true)}
-      /> */}
 
       {/* ── Video Player 80% Pop-up Modal (COMMENTED OUT FOR NOW) ──
       <AnimatePresence>
