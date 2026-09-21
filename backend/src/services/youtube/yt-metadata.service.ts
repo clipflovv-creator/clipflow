@@ -27,7 +27,7 @@ export class YouTubeMetadataService {
   static async getMetadata(url: string, ytDlpBin: string, retries = 1): Promise<any> {
     const cookiesFile = findCookiesFile();
     const cookieArg = cookiesFile ? `--cookies "${cookiesFile}" ` : '';
-    const flags = `--js-runtimes node ${cookieArg}--no-warnings --no-check-certificate --no-comments --no-playlist --dump-json`;
+    const flags = `--js-runtimes node ${cookieArg}--no-warnings --no-check-certificate --no-playlist --dump-json`;
 
     let lastErr: any;
     for (let attempt = 0; attempt <= retries; attempt++) {

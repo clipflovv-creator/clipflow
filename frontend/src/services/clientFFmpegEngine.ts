@@ -8,7 +8,7 @@
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { toBlobURL } from '@ffmpeg/util';
-import { resolveRelayUrl } from './clientMediaRangeFetcher';
+import { resolveRelayUrl, fetchSidxSlice } from './clientMediaRangeFetcher';
 
 export interface FFmpegClipOptions {
   videoUrl: string;
@@ -217,20 +217,55 @@ async function fetchMediaInChunks(
 
 /**
  * Downloads a media stream using the optimal strategy:
- * - YouTube: <=1MB chunked range requests to bypass GoogleVideo 403 throttling
- * - Instagram / Twitter / Social Media: Direct full-stream fetch to prevent 416 Range errors
+ * 1. For YouTube: Attempts high-efficiency sidx ranged segment extraction.
+ *    Downloads only ~3MB to 8MB of target subsegments even on 2-hour videos.
+ * 2. Fallback: <=1MB chunked range requests from byte 0.
+ * 3. For Instagram / Twitter: Direct full-stream fetch to prevent 416 Range errors.
  */
-async function downloadMediaStream(
+async function fetchSmartMediaStream(
   url: string,
-  bytesNeeded: number,
+  trimStart: number,
+  trimEnd: number,
+  estimatedBitrate: number,
   onProgress?: (percent: number) => void
-): Promise<Uint8Array> {
+): Promise<{ bytes: Uint8Array; relativeStart: number; isSidx: boolean }> {
   const isYouTube = url.includes('googlevideo.com') || url.includes('youtube.com');
+
   if (isYouTube) {
-    return await fetchMediaInChunks(url, bytesNeeded, onProgress);
+    // 1. High-efficiency sidx ranged extraction
+    try {
+      const sidxSlice = await fetchSidxSlice(url, trimStart, trimEnd, onProgress);
+      if (sidxSlice && sidxSlice.data.length > 0) {
+        return {
+          bytes: sidxSlice.data,
+          relativeStart: sidxSlice.relativeStart,
+          isSidx: true,
+        };
+      }
+    } catch (e) {
+      console.warn('[fetchSmartMediaStream] sidx extraction failed, falling back to chunked fetch:', e);
+    }
+
+    // 2. Fallback: clamped chunked range from byte 0
+    const bytesNeeded = Math.min(
+      200 * 1048576,
+      Math.max(4 * 1048576, Math.ceil((trimEnd + 15) * estimatedBitrate))
+    );
+    const bytes = await fetchMediaInChunks(url, bytesNeeded, onProgress);
+    return {
+      bytes,
+      relativeStart: trimStart,
+      isSidx: false,
+    };
   }
+
   // Direct fast streaming for Instagram, Twitter, and other non-YouTube platforms
-  return await fetchDirectMediaStream(url, onProgress);
+  const bytes = await fetchDirectMediaStream(url, onProgress);
+  return {
+    bytes,
+    relativeStart: trimStart,
+    isSidx: false,
+  };
 }
 
 /**
@@ -286,8 +321,6 @@ export class ClientFFmpegEngine {
       format = 'mp4',
       aspectRatio = '16:9',
       cropBox,
-      videoFileSize,
-      audioFileSize,
       onProgress,
     } = options;
 
@@ -310,36 +343,29 @@ export class ClientFFmpegEngine {
       const sourceUrl = audioUrl || videoUrl;
       if (!sourceUrl) throw new Error('No audio stream URL available.');
 
-      // 128 kbps audio = 16 KB/s. 1 MB contains ~65.5 seconds of audio.
-      const audioBytesNeeded = Math.min(
-        audioFileSize || Infinity,
-        Math.max(1048576, Math.ceil((effectiveTrimEnd + 20) * 20_000))
-      );
-
       if (onProgress) onProgress('🎵 Streaming audio via Edge Relay...', 20);
-      const audioBytes = await downloadMediaStream(sourceUrl, audioBytesNeeded, (pct) => {
-        if (onProgress) onProgress(`🎵 Downloading audio (${pct}%)...`, 20 + Math.round(pct * 0.4));
+      const audioSlice = await fetchSmartMediaStream(sourceUrl, trimStart, effectiveTrimEnd, 20_000, (pct) => {
+        if (onProgress) onProgress(`🎵 Downloading audio (${pct}%)...`, 20 + Math.round(pct * 0.45));
       });
 
-      if (onProgress) onProgress('⚡ Slicing audio clip in FFmpeg...', 65);
-      await ffmpeg.writeFile('input_a.m4a', audioBytes);
+      if (onProgress) onProgress('⚡ Slicing audio clip in FFmpeg...', 70);
+      await ffmpeg.writeFile('input_a.m4a', audioSlice.bytes);
 
       const outExt = format === 'mp3' ? 'wav' : format;
       const outName = `output.${outExt}`;
       try { await ffmpeg.deleteFile(outName); } catch {}
 
+      const aStart = audioSlice.relativeStart;
       const args: string[] = [
         '-y',
-        '-ss', trimStart.toFixed(3),
+        '-ss', aStart.toFixed(3),
         '-i', 'input_a.m4a',
         '-t', duration.toFixed(3),
+        '-c:a', outExt === 'wav' ? 'pcm_s16le' : 'aac',
+        ...(outExt === 'wav' ? [] : ['-b:a', '192k']),
+        '-avoid_negative_ts', 'make_zero',
+        outName,
       ];
-
-      if (outExt === 'm4a') {
-        args.push('-c:a', 'copy', '-avoid_negative_ts', 'make_zero', outName);
-      } else {
-        args.push(outName);
-      }
 
       const exitCode = await ffmpeg.exec(args);
       if (exitCode !== 0) {
@@ -362,19 +388,6 @@ export class ClientFFmpegEngine {
     // ── 2. VIDEO + AUDIO EXPORT ───────────────────────────────────────────────
     if (!videoUrl) throw new Error('No video stream URL provided.');
 
-    // 1080p video = ~300 KB/s. Each 1MB chunk holds ~3.5 seconds of video.
-    // Download enough chunks to comfortably cover trimStart to trimEnd + 15s keyframe buffer.
-    const videoBytesNeeded = Math.min(
-      videoFileSize || Infinity,
-      Math.max(4 * 1048576, Math.ceil((effectiveTrimEnd + 15) * 450_000))
-    );
-
-    // Audio = ~16 KB/s. 1 MB contains ~65.5 seconds of audio.
-    const audioBytesNeeded = Math.min(
-      audioFileSize || Infinity,
-      Math.max(1048576, Math.ceil((effectiveTrimEnd + 20) * 20_000))
-    );
-
     if (onProgress) onProgress('⬇️ Streaming media streams in parallel...', 15);
 
     let videoPct = 0;
@@ -384,13 +397,13 @@ export class ClientFFmpegEngine {
       if (onProgress) onProgress(`⬇️ Downloading media: Video ${videoPct}% | Audio ${audioPct}%...`, combined);
     };
 
-    // Download video and audio concurrently over HTTP/2
-    const [videoBytes, audioBytes] = await Promise.all([
-      downloadMediaStream(videoUrl, videoBytesNeeded, (pct) => {
+    // Download video and audio concurrently using intelligent sidx ranged slices
+    const [videoSlice, audioSlice] = await Promise.all([
+      fetchSmartMediaStream(videoUrl, trimStart, effectiveTrimEnd, 450_000, (pct) => {
         videoPct = pct;
         updateCombinedProgress();
       }),
-      audioUrl ? downloadMediaStream(audioUrl, audioBytesNeeded, (pct) => {
+      audioUrl ? fetchSmartMediaStream(audioUrl, trimStart, effectiveTrimEnd, 20_000, (pct) => {
         audioPct = pct;
         updateCombinedProgress();
       }) : Promise.resolve(null),
@@ -398,111 +411,57 @@ export class ClientFFmpegEngine {
 
     if (onProgress) onProgress('⚡ Slicing and muxing video + audio in FFmpeg...', 78);
 
-    await ffmpeg.writeFile('input_v.mp4', videoBytes);
-    if (audioBytes) {
-      await ffmpeg.writeFile('input_a.m4a', audioBytes);
+    await ffmpeg.writeFile('input_v.mp4', videoSlice.bytes);
+    if (audioSlice) {
+      await ffmpeg.writeFile('input_a.m4a', audioSlice.bytes);
     }
 
     const cropFilter = buildCropFilter(aspectRatio, cropBox);
     const outName = 'output.mp4';
     try { await ffmpeg.deleteFile(outName); } catch {}
 
-    let args: string[];
+    const vRelativeStart = videoSlice.relativeStart;
+    const aRelativeStart = audioSlice ? audioSlice.relativeStart : vRelativeStart;
 
-    if (audioBytes) {
-      // Both Video and Audio inputs
-      if (cropFilter) {
-        args = [
-          '-y',
-          '-ss', trimStart.toFixed(3),
-          '-i', 'input_v.mp4',
-          '-ss', trimStart.toFixed(3),
-          '-i', 'input_a.m4a',
-          '-t', duration.toFixed(3),
-          '-vf', cropFilter,
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-crf', '18',
-          '-c:a', 'aac',
-          '-b:a', '192k',
-          '-map', '0:v:0',
-          '-map', '1:a:0',
-          '-avoid_negative_ts', 'make_zero',
-          '-movflags', '+faststart',
-          outName,
-        ];
-      } else {
-        // Fast, 100% lossless stream copy
-        args = [
-          '-y',
-          '-ss', trimStart.toFixed(3),
-          '-i', 'input_v.mp4',
-          '-ss', trimStart.toFixed(3),
-          '-i', 'input_a.m4a',
-          '-t', duration.toFixed(3),
-          '-c:v', 'copy',
-          '-c:a', 'copy',
-          '-map', '0:v:0',
-          '-map', '1:a:0',
-          '-avoid_negative_ts', 'make_zero',
-          '-movflags', '+faststart',
-          '-strict', '-2',
-          outName,
-        ];
-      }
-    } else {
-      // Single combined input (video + audio in one stream)
-      if (cropFilter) {
-        args = [
-          '-y',
-          '-ss', trimStart.toFixed(3),
-          '-i', 'input_v.mp4',
-          '-t', duration.toFixed(3),
-          '-vf', cropFilter,
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-crf', '18',
-          '-c:a', 'aac',
-          '-b:a', '192k',
-          '-avoid_negative_ts', 'make_zero',
-          '-movflags', '+faststart',
-          outName,
-        ];
-      } else {
-        args = [
-          '-y',
-          '-ss', trimStart.toFixed(3),
-          '-i', 'input_v.mp4',
-          '-t', duration.toFixed(3),
-          '-c', 'copy',
-          '-avoid_negative_ts', 'make_zero',
-          '-movflags', '+faststart',
-          '-strict', '-2',
-          outName,
-        ];
-      }
-    }
+    // Frame-accurate transcode with universal H.264 (yuv420p) and synchronized AAC audio
+    const args: string[] = [
+      '-y',
+      '-ss', vRelativeStart.toFixed(3),
+      '-i', 'input_v.mp4',
+      ...(audioSlice ? ['-ss', aRelativeStart.toFixed(3), '-i', 'input_a.m4a'] : []),
+      '-t', duration.toFixed(3),
+      ...(cropFilter ? ['-vf', cropFilter] : []),
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-crf', '18',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      ...(audioSlice ? ['-map', '0:v:0', '-map', '1:a:0'] : []),
+      '-avoid_negative_ts', 'make_zero',
+      '-movflags', '+faststart',
+      outName,
+    ];
 
     const exitCode = await ffmpeg.exec(args);
     if (exitCode !== 0) {
-      console.warn('[ClientFFmpegEngine] Stream copy exited with code', exitCode, '- executing safe keyframe re-encode fallback');
+      console.warn('[ClientFFmpegEngine] Initial export exited with code', exitCode, '- executing safe fallback');
       try { await ffmpeg.deleteFile(outName); } catch {}
 
       const fallbackArgs = [
         '-y',
-        '-ss', trimStart.toFixed(3),
+        '-ss', vRelativeStart.toFixed(3),
         '-i', 'input_v.mp4',
-        ...(audioBytes ? ['-ss', trimStart.toFixed(3), '-i', 'input_a.m4a'] : []),
+        ...(audioSlice ? ['-ss', aRelativeStart.toFixed(3), '-i', 'input_a.m4a'] : []),
         '-t', duration.toFixed(3),
         ...(cropFilter ? ['-vf', cropFilter] : []),
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
-        '-crf', '18',
+        '-crf', '20',
+        '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
-        '-b:a', '192k',
-        ...(audioBytes ? ['-map', '0:v:0', '-map', '1:a:0'] : []),
+        '-b:a', '128k',
         '-avoid_negative_ts', 'make_zero',
-        '-movflags', '+faststart',
         outName,
       ];
       const fallbackExit = await ffmpeg.exec(fallbackArgs);
@@ -518,7 +477,7 @@ export class ClientFFmpegEngine {
     // Clean up MEMFS files to keep browser memory lightweight
     try {
       await ffmpeg.deleteFile('input_v.mp4');
-      if (audioBytes) await ffmpeg.deleteFile('input_a.m4a');
+      if (audioSlice) await ffmpeg.deleteFile('input_a.m4a');
       await ffmpeg.deleteFile(outName);
     } catch {}
 

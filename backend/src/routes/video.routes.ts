@@ -671,11 +671,12 @@ router.post('/metadata', async (req: Request, res: Response) => {
       formats: (metadata.formats || []).map((f: any) => ({
         format_id: f.format_id,
         ext: f.ext,
+        protocol: f.protocol,
         resolution: f.resolution,
         height: f.height,
         width: f.width,
         fps: f.fps,
-        filesize: f.filesize,
+        filesize: f.filesize || f.filesize_approx,
         vcodec: f.vcodec,
         acodec: f.acodec,
         format_note: f.format_note,
@@ -688,13 +689,14 @@ router.post('/metadata', async (req: Request, res: Response) => {
         .map((f: any) => ({
           format_id: f.format_id,
           ext: f.ext,
+          protocol: f.protocol,
           height: f.height,
           width: f.width,
           fps: f.fps,
           vcodec: f.vcodec,
           acodec: f.acodec,
           tbr: f.tbr,
-          filesize: f.filesize,
+          filesize: f.filesize || f.filesize_approx,
           url: f.url,
         })),
       audio_formats: (metadata.formats || [])
@@ -702,9 +704,10 @@ router.post('/metadata', async (req: Request, res: Response) => {
         .map((f: any) => ({
           format_id: f.format_id,
           ext: f.ext,
+          protocol: f.protocol,
           acodec: f.acodec,
           abr: f.abr,
-          filesize: f.filesize,
+          filesize: f.filesize || f.filesize_approx,
           url: f.url,
         })),
     };

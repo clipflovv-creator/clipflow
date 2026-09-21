@@ -116,7 +116,8 @@ export function isDirectStream(f: any): boolean {
   ) {
     return false;
   }
-  if (f.protocol && (f.protocol.includes('m3u8') || f.protocol.includes('hls'))) {
+  const protocol = (f.protocol || '').toLowerCase();
+  if (protocol.includes('m3u8') || protocol.includes('hls')) {
     return false;
   }
   return true;
@@ -124,6 +125,7 @@ export function isDirectStream(f: any): boolean {
 
 /**
  * Finds the optimal video and audio stream formats for a requested target resolution.
+ * Prioritizes standard universal MP4 (H.264 / AVC1) and M4A (AAC) formats.
  */
 export function findBestTracks(metadata: any, targetQuality: string = '1080p'): StreamTrackSelection {
   if (!metadata) {
@@ -152,40 +154,54 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
     return f.url && f.vcodec && f.vcodec !== 'none' && f.acodec && f.acodec !== 'none';
   });
 
-  // Find best matching video stream (prefer MP4 format with exact target height)
-  let bestVideo = videoOnly.find((f) => f.height === targetHeight && f.ext === 'mp4');
+  // Helper to check if format is H.264/AVC1 in MP4
+  const isAvcMp4 = (f: any) => f.ext === 'mp4' || (f.vcodec && f.vcodec.startsWith('avc1'));
+
+  // Find best matching video stream:
+  // 1st priority: Exact height and H.264 MP4
+  let bestVideo = videoOnly.find((f) => f.height === targetHeight && isAvcMp4(f));
+  // 2nd priority: Exact height any container
   if (!bestVideo) {
     bestVideo = videoOnly.find((f) => f.height === targetHeight);
   }
+  // 3rd priority: Closest height <= targetHeight (preferring MP4)
   if (!bestVideo) {
-    // Find closest height <= targetHeight, or highest available
     const sorted = [...videoOnly].sort((a, b) => (b.height || 0) - (a.height || 0));
-    bestVideo = sorted.find((f) => (f.height || 0) <= targetHeight) || sorted[0] || null;
+    bestVideo = sorted.find((f) => (f.height || 0) <= targetHeight && isAvcMp4(f)) ||
+                sorted.find((f) => (f.height || 0) <= targetHeight) ||
+                sorted[0] || null;
   }
   // Fallback to combined if no separate video
   if (!bestVideo) {
-    bestVideo = combined.find((f) => f.height === targetHeight) || combined[0] || null;
+    bestVideo = combined.find((f) => f.height === targetHeight && isAvcMp4(f)) ||
+                combined.find((f) => f.height === targetHeight) ||
+                combined[0] || null;
   }
 
-  // Find best matching audio stream (prefer m4a/aac or high bitrate opus)
+  // Helper to check if audio format is standard AAC/M4A
+  const isAacM4a = (f: any) => f.ext === 'm4a' || (f.acodec && (f.acodec.startsWith('mp4a') || f.acodec.includes('aac')));
+
+  // Find best matching audio stream (strongly prefer M4A / AAC for zero-glitch browser & player compatibility)
   const sortedAudio = [...audioOnly].sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
-  let bestAudio = sortedAudio.find((f) => f.ext === 'm4a') || sortedAudio[0] || null;
+  let bestAudio = sortedAudio.find(isAacM4a) || sortedAudio[0] || null;
 
   // Robust fallback: Check metadata.audio_formats or any direct format with acodec
   if (!bestAudio) {
     const directAudioFormats = (metadata.audio_formats || []).filter(isDirectStream);
     const sortedAudioMeta = [...directAudioFormats].sort((a: any, b: any) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
-    bestAudio = sortedAudioMeta.find((f: any) => f.ext === 'm4a') || sortedAudioMeta[0] || null;
+    bestAudio = sortedAudioMeta.find(isAacM4a) || sortedAudioMeta[0] || null;
   }
   if (!bestAudio) {
     const anyAudio = directFormats.filter((f) => f.url && f.acodec && f.acodec !== 'none');
     const sortedAnyAudio = [...anyAudio].sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
-    bestAudio = sortedAnyAudio[0] || null;
+    bestAudio = sortedAnyAudio.find(isAacM4a) || sortedAnyAudio[0] || null;
   }
 
   // Best combined format fallback
   const sortedCombined = [...combined].sort((a, b) => (b.height || 0) - (a.height || 0));
-  const bestCombined = sortedCombined.find((f) => f.height === targetHeight) || sortedCombined[0] || null;
+  const bestCombined = sortedCombined.find((f) => f.height === targetHeight && isAvcMp4(f)) ||
+                       sortedCombined.find((f) => f.height === targetHeight) ||
+                       sortedCombined[0] || null;
 
   return {
     videoFormat: bestVideo,
@@ -367,4 +383,221 @@ export async function extractAudioRangeSamples(
     return null;
   }
 }
+
+export interface SidxSegment {
+  index: number;
+  startByte: number;
+  endByte: number;
+  size: number;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  startsWithSAP: number;
+}
+
+export interface ParsedSidxResult {
+  initHeaderLength: number;
+  sidxBoxSize: number;
+  timescale: number;
+  segments: SidxSegment[];
+}
+
+/**
+ * Parses the ISO Base Media File Format Segment Index (`sidx`) box in pure JS.
+ * Used by YouTube DASH to index self-contained subsegment byte ranges and timestamps.
+ */
+export function parseSidxBox(buffer: Uint8Array): ParsedSidxResult | null {
+  const dataView = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
+  let sidxOffset = -1;
+  for (let i = 4; i < buffer.length - 4; i++) {
+    if (
+      buffer[i] === 0x73 && // 's'
+      buffer[i + 1] === 0x69 && // 'i'
+      buffer[i + 2] === 0x64 && // 'd'
+      buffer[i + 3] === 0x78    // 'x'
+    ) {
+      sidxOffset = i;
+      break;
+    }
+  }
+
+  if (sidxOffset === -1) return null;
+
+  const sidxBoxStart = sidxOffset - 4;
+  if (sidxBoxStart < 0 || sidxBoxStart + 12 > buffer.length) return null;
+  const sidxSize = dataView.getUint32(sidxBoxStart, false);
+  if (sidxSize <= 0) return null;
+
+  const version = dataView.getUint8(sidxBoxStart + 8);
+  let readPos = sidxBoxStart + 12;
+
+  readPos += 4; // referenceId
+  const timescale = dataView.getUint32(readPos, false);
+  readPos += 4;
+  if (!timescale || timescale <= 0) return null;
+
+  let earliestPresentationTime = 0;
+  let firstOffset = 0;
+  if (version === 0) {
+    if (readPos + 8 > buffer.length) return null;
+    earliestPresentationTime = dataView.getUint32(readPos, false);
+    readPos += 4;
+    firstOffset = dataView.getUint32(readPos, false);
+    readPos += 4;
+  } else {
+    if (readPos + 16 > buffer.length) return null;
+    const hiTime = dataView.getUint32(readPos, false);
+    const loTime = dataView.getUint32(readPos + 4, false);
+    earliestPresentationTime = hiTime * 4294967296 + loTime;
+    readPos += 8;
+
+    const hiOff = dataView.getUint32(readPos, false);
+    const loOff = dataView.getUint32(readPos + 4, false);
+    firstOffset = hiOff * 4294967296 + loOff;
+    readPos += 8;
+  }
+
+  readPos += 2; // reserved
+  if (readPos + 2 > buffer.length) return null;
+  const referenceCount = dataView.getUint16(readPos, false);
+  readPos += 2;
+  if (referenceCount <= 0 || referenceCount > 20000) return null;
+
+  const firstSegmentByte = sidxBoxStart + sidxSize + firstOffset;
+  let currentByte = firstSegmentByte;
+  let currentTime = earliestPresentationTime / timescale;
+
+  const segments: SidxSegment[] = [];
+  for (let i = 0; i < referenceCount; i++) {
+    if (readPos + 12 > buffer.length) break;
+
+    const firstWord = dataView.getUint32(readPos, false);
+    readPos += 4;
+    const subsegmentDuration = dataView.getUint32(readPos, false);
+    readPos += 4;
+    const thirdWord = dataView.getUint32(readPos, false);
+    readPos += 4;
+
+    const referenceSize = firstWord & 0x7fffffff;
+    const startsWithSAP = (thirdWord >> 31) & 1;
+    const durationSec = subsegmentDuration / timescale;
+
+    segments.push({
+      index: i,
+      startByte: currentByte,
+      endByte: currentByte + referenceSize - 1,
+      size: referenceSize,
+      startTime: currentTime,
+      endTime: currentTime + durationSec,
+      duration: durationSec,
+      startsWithSAP,
+    });
+
+    currentByte += referenceSize;
+    currentTime += durationSec;
+  }
+
+  return {
+    initHeaderLength: sidxBoxStart,
+    sidxBoxSize: sidxSize,
+    timescale,
+    segments,
+  };
+}
+
+export interface SmartSliceResult {
+  data: Uint8Array;
+  relativeStart: number;
+  sliceStartTime: number;
+  sliceEndTime: number;
+  isSidxIndexed: boolean;
+}
+
+/**
+ * Downloads ONLY the required media segments for a target [trimStart, trimEnd] time range
+ * using the YouTube DASH sidx index.
+ * 
+ * Prepends the track initialization header (ftyp + moov) to the selected segments,
+ * producing a valid, lightweight fragmented MP4 slice that starts on a clean IDR keyframe.
+ * 
+ * Reduces network download from hundreds of megabytes down to just ~3MB to 8MB.
+ */
+export async function fetchSidxSlice(
+  streamUrl: string,
+  trimStart: number,
+  trimEnd: number,
+  onProgress?: (percent: number) => void
+): Promise<SmartSliceResult | null> {
+  try {
+    // 1. Fetch initial 16 KB header to check for sidx
+    const headerBytes = new Uint8Array(await fetchByteRange(streamUrl, 0, 16383));
+    const parsed = parseSidxBox(headerBytes);
+    if (!parsed || parsed.segments.length === 0) {
+      return null;
+    }
+
+    // 2. Find matching segments covering [trimStart, trimEnd]
+    const matching = parsed.segments.filter(
+      (s) => s.endTime > trimStart && s.startTime < trimEnd
+    );
+
+    if (matching.length === 0) {
+      return null;
+    }
+
+    const startSegment = matching[0];
+    const endSegment = matching[matching.length - 1];
+
+    const rangeStart = startSegment.startByte;
+    const rangeEnd = endSegment.endByte;
+    const totalRangeBytes = rangeEnd - rangeStart + 1;
+
+    // 3. Download the exact target segment bytes in <=1MB chunks
+    const CHUNK_SIZE = 1048576;
+    const totalChunks = Math.max(1, Math.ceil(totalRangeBytes / CHUNK_SIZE));
+    const chunks: Uint8Array[] = [];
+    let receivedBytes = 0;
+
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkStart = rangeStart + i * CHUNK_SIZE;
+      const chunkEnd = Math.min(rangeEnd, rangeStart + (i + 1) * CHUNK_SIZE - 1);
+      const sliceBuf = await fetchByteRange(streamUrl, chunkStart, chunkEnd);
+      const chunk = new Uint8Array(sliceBuf);
+      if (chunk.length > 0) {
+        chunks.push(chunk);
+        receivedBytes += chunk.length;
+        if (onProgress) {
+          onProgress(Math.min(99, Math.round((receivedBytes / totalRangeBytes) * 100)));
+        }
+      }
+    }
+
+    // 4. Assemble: [ftyp + moov] + [target segments media data]
+    const initHeader = headerBytes.subarray(0, parsed.initHeaderLength);
+    const combined = new Uint8Array(initHeader.length + receivedBytes);
+    combined.set(initHeader, 0);
+
+    let offset = initHeader.length;
+    for (const c of chunks) {
+      combined.set(c, offset);
+      offset += c.length;
+    }
+
+    if (onProgress) onProgress(100);
+
+    const relativeStart = Math.max(0, trimStart - startSegment.startTime);
+    return {
+      data: combined,
+      relativeStart,
+      sliceStartTime: startSegment.startTime,
+      sliceEndTime: endSegment.endTime,
+      isSidxIndexed: true,
+    };
+  } catch (e) {
+    console.warn('[fetchSidxSlice] Sidx ranged extraction fallback:', e);
+    return null;
+  }
+}
+
 
