@@ -142,12 +142,9 @@ export default function ClipFlowEditor() {
     previewQualities,
     defaultPreviewStreamUrl,
     fetchVideo,
-  } = useEditorMetadata(activeUrl, initialSession?.metadata, isTwitch, (cleanUrl) => {
-    setActiveUrl(cleanUrl);
-    try { localStorage.setItem('clipflow_active_video_url', cleanUrl); } catch {}
-    setSearchParams({ url: cleanUrl });
-    setShowUrlChange(false);
-  });
+  } = useEditorMetadata(activeUrl, initialSession?.metadata, isTwitch);
+
+  const lastFetchedUrlRef = useRef<string>('');
 
   // Player Element References
   const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
@@ -231,8 +228,22 @@ export default function ClipFlowEditor() {
   });
 
   useEffect(() => {
-    if (metadata?.width && metadata?.height && metadata.width > 0 && metadata.height > 0) {
+    if (!metadata) return;
+    if (metadata.width && metadata.height && metadata.width > 0 && metadata.height > 0) {
       setVideoDimensions({ width: metadata.width, height: metadata.height });
+    }
+    if (metadata.title && !customFileName) {
+      setCustomFileName(metadata.title);
+    }
+    const dur = metadata.duration && metadata.duration > 0 ? metadata.duration : 0;
+    if (dur > 0) {
+      setActualDuration((prev) => (prev > 0 ? prev : dur));
+      setTrimRange((prev) => {
+        if (prev[0] === 0 && (prev[1] === 60 || prev[1] === 0 || prev[1] > dur)) {
+          return [0, dur];
+        }
+        return prev;
+      });
     }
   }, [metadata]);
 
@@ -517,15 +528,31 @@ export default function ClipFlowEditor() {
     rightPanelWidth, leftSidebarWidth, volume, isMuted, isLiveChannelUrl, effectiveDuration
   ]);
 
+  const handleLoadVideo = (url: string) => {
+    const clean = url.trim();
+    if (!clean) return;
+    lastFetchedUrlRef.current = clean;
+    setActiveUrl(clean);
+    try { localStorage.setItem('clipflow_active_video_url', clean); } catch {}
+    setSearchParams({ url: clean });
+    setShowUrlChange(false);
+    fetchVideo(clean, true);
+  };
+
   // Sync active URL on mount / search params change
   useEffect(() => {
     if (rawUrl) {
+      if (lastFetchedUrlRef.current === rawUrl) return;
+      lastFetchedUrlRef.current = rawUrl;
       setActiveUrl(rawUrl);
+      try { localStorage.setItem('clipflow_active_video_url', rawUrl); } catch {}
       fetchVideo(rawUrl);
     } else {
       try {
         const cachedUrl = localStorage.getItem('clipflow_active_video_url');
         if (cachedUrl) {
+          if (lastFetchedUrlRef.current === cachedUrl) return;
+          lastFetchedUrlRef.current = cachedUrl;
           setActiveUrl(cachedUrl);
           setSearchParams({ url: cachedUrl }, { replace: true });
           fetchVideo(cachedUrl);
@@ -848,7 +875,7 @@ export default function ClipFlowEditor() {
         showUrlChange={showUrlChange}
         newUrlInput={newUrlInput}
         setNewUrlInput={setNewUrlInput}
-        onLoadVideo={(url) => fetchVideo(url)}
+        onLoadVideo={handleLoadVideo}
         isLoadingMeta={isLoadingMeta}
         currentVideoUrl={activeUrl}
       />

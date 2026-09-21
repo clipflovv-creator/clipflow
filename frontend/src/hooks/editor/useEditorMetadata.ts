@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useCallback } from 'react';
 import { getCachedMetadata, setCachedMetadata } from '../../utils/metadataCache';
 import { isTwitchLiveChannelUrl } from '../../components/Twitch/useTwitchLiveChannel';
+import { extractYouTubeId } from '../../utils/platforms';
 
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
   ((typeof window !== 'undefined' && window.location.port !== '5173')
@@ -24,16 +25,61 @@ export interface PreviewQualityTier {
   hasAudio: boolean;
 }
 
+function buildQualityOptions(data: any): QualityOption[] {
+  const rawFormats = data?.video_formats || data?.formats || [];
+  const heights = Array.from(
+    new Set(
+      rawFormats
+        .map((f: any) => {
+          let h = f.height || 0;
+          let w = f.width || 0;
+          if ((!h || !w) && f.resolution) {
+            const match = f.resolution.match(/(\d+)x(\d+)/);
+            if (match) {
+              w = parseInt(match[1], 10);
+              h = parseInt(match[2], 10);
+            }
+          }
+          return (w > 0 && h > 0) ? Math.min(w, h) : (h || w);
+        })
+        .filter((h: number) => h > 0 && typeof h === 'number')
+    )
+  ).sort((a: any, b: any) => b - a);
+
+  return (heights.length > 0 ? (heights as number[]) : [1080, 720, 480, 360]).map((h) => {
+    const matching = rawFormats.filter((f: any) => {
+      let fh = f.height;
+      if (!fh && f.resolution) {
+        const match = (f.resolution || '').match(/\d+x(\d+)/);
+        if (match) fh = parseInt(match[1], 10);
+      }
+      return fh === h;
+    });
+    const best = matching.reduce((a: any, b: any) => (b.tbr || 0) > (a.tbr || 0) ? b : a, matching[0]);
+    return {
+      label: `${h}p`,
+      height: h,
+      format_id: best?.format_id || 'best',
+      tbr: best?.tbr,
+      isNative: true,
+    };
+  });
+}
+
 export function useEditorMetadata(
   _activeUrl: string,
   initialMetadata: any,
-  isTwitch: boolean,
-  onUrlChange?: (cleanUrl: string) => void
+  isTwitch: boolean
 ) {
   const [metadata, setMetadata] = useState<any>(initialMetadata || null);
   const [isLoadingMeta, setIsLoadingMeta] = useState(false);
   const [errorMeta, setErrorMeta] = useState('');
-  const [qualityOptions, setQualityOptions] = useState<QualityOption[]>([]);
+  const [qualityOptions, setQualityOptions] = useState<QualityOption[]>(() => {
+    if (initialMetadata) {
+      return buildQualityOptions(initialMetadata);
+    }
+    return [];
+  });
 
   const inFlightFetchMetaRef = useRef<Map<string, Promise<any>>>(new Map());
 
@@ -68,21 +114,18 @@ export function useEditorMetadata(
         _synthetic: true,
       };
       setMetadata(syntheticMeta);
-      setQualityOptions([
-        { label: '1080p', height: 1080, format_id: '1080p', isNative: true },
-        { label: '720p', height: 720, format_id: '720p', isNative: true },
-        { label: '480p', height: 480, format_id: '480p', isNative: true },
-        { label: '360p', height: 360, format_id: '360p', isNative: true },
-      ]);
+      setQualityOptions(buildQualityOptions(syntheticMeta));
       setIsLoadingMeta(false);
     }
 
     // 2. Check metadata cache for instant display
-    if (!forceRefresh) {
+    if (!forceRefresh && !isTwitchLiveNow) {
       const cached = getCachedMetadata(cleanTargetUrl);
       if (cached && !cached._synthetic) {
         setMetadata(cached);
+        setQualityOptions(buildQualityOptions(cached));
         setIsLoadingMeta(false);
+        return;
       }
     }
 
@@ -92,20 +135,48 @@ export function useEditorMetadata(
 
     try {
       let fetchPromise: Promise<any>;
-      if (inFlightFetchMetaRef.current.has(cleanTargetUrl)) {
+      if (inFlightFetchMetaRef.current.has(cleanTargetUrl) && !forceRefresh) {
         fetchPromise = inFlightFetchMetaRef.current.get(cleanTargetUrl)!;
       } else {
         const p = (async () => {
-          const res = await fetch(`${BACKEND_URL}/api/video/metadata`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: cleanTargetUrl }),
-          });
-          if (!res.ok) {
-            const errJson = await res.json().catch(() => ({}));
-            throw new Error(errJson.error || `Failed to fetch metadata (status: ${res.status})`);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 30000);
+          try {
+            const res = await fetch(`${BACKEND_URL}/api/video/metadata`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: cleanTargetUrl }),
+              signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            if (!res.ok) {
+              const errJson = await res.json().catch(() => ({}));
+              throw new Error(errJson.error || `Failed to fetch metadata (status: ${res.status})`);
+            }
+            return await res.json();
+          } catch (err: any) {
+            clearTimeout(timeoutId);
+            // Fallback for YouTube if backend fails
+            const ytId = extractYouTubeId(cleanTargetUrl);
+            if (ytId) {
+              try {
+                const oembedRes = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${ytId}`);
+                if (oembedRes.ok) {
+                  const oembed = await oembedRes.json();
+                  return {
+                    id: ytId,
+                    title: oembed.title || 'YouTube Video',
+                    thumbnail: `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`,
+                    uploader: oembed.author_name || 'YouTube Creator',
+                    duration: 0,
+                    duration_string: '00:00',
+                    formats: [],
+                  };
+                }
+              } catch (_) {}
+            }
+            throw err;
           }
-          return await res.json();
         })();
 
         inFlightFetchMetaRef.current.set(cleanTargetUrl, p);
@@ -115,53 +186,10 @@ export function useEditorMetadata(
       }
 
       const data = await fetchPromise;
-      setMetadata(data);
-      setCachedMetadata(cleanTargetUrl, data);
-
-      // Build quality options
-      const rawFormats = data.video_formats || data.formats || [];
-      const heights = Array.from(
-        new Set(
-          rawFormats
-            .map((f: any) => {
-              let h = f.height || 0;
-              let w = f.width || 0;
-              if ((!h || !w) && f.resolution) {
-                const match = f.resolution.match(/(\d+)x(\d+)/);
-                if (match) {
-                  w = parseInt(match[1], 10);
-                  h = parseInt(match[2], 10);
-                }
-              }
-              return (w > 0 && h > 0) ? Math.min(w, h) : (h || w);
-            })
-            .filter((h: number) => h > 0 && typeof h === 'number')
-        )
-      ).sort((a: any, b: any) => b - a);
-
-      const opts: QualityOption[] = (heights.length > 0 ? (heights as number[]) : [1080, 720, 480, 360]).map((h) => {
-        const matching = rawFormats.filter((f: any) => {
-          let fh = f.height;
-          if (!fh && f.resolution) {
-            const match = (f.resolution || '').match(/\d+x(\d+)/);
-            if (match) fh = parseInt(match[1], 10);
-          }
-          return fh === h;
-        });
-        const best = matching.reduce((a: any, b: any) => (b.tbr || 0) > (a.tbr || 0) ? b : a, matching[0]);
-        return {
-          label: `${h}p`,
-          height: h,
-          format_id: best?.format_id || 'best',
-          tbr: best?.tbr,
-          isNative: true,
-        };
-      });
-
-      setQualityOptions(opts);
-
-      if (onUrlChange) {
-        onUrlChange(cleanTargetUrl);
+      if (data) {
+        setMetadata(data);
+        setCachedMetadata(cleanTargetUrl, data);
+        setQualityOptions(buildQualityOptions(data));
       }
     } catch (err: any) {
       if (isTwitchLiveNow) {
@@ -173,7 +201,7 @@ export function useEditorMetadata(
     } finally {
       setIsLoadingMeta(false);
     }
-  }, [onUrlChange]);
+  }, []);
 
   // Compute preview quality tiers and default preview stream URL
   const { previewQualities, defaultPreviewStreamUrl } = useMemo(() => {
