@@ -274,7 +274,7 @@ export default function ClipFlowEditor() {
   const [cropPosition, setCropPosition] = useState<'center' | 'left' | 'right'>(initialSession?.cropPosition || 'center');
   const [downloadFormat, setDownloadFormat] = useState<'mp4' | 'mp3' | 'captions'>(initialSession?.downloadFormat || 'mp4');
   const [captionFormat, setCaptionFormat] = useState<'srt' | 'vtt' | 'txt'>(initialSession?.captionFormat || 'srt');
-  const [captionLang, setCaptionLang] = useState<string>(initialSession?.captionLang || 'en');
+  const [captionLang, setCaptionLang] = useState<string>(initialSession?.captionLang || 'auto');
   const [downloadQuality, setDownloadQuality] = useState('1080p');
   const [downloadAudioBitrate, setDownloadAudioBitrate] = useState<'0' | '320k' | '256k' | '192k' | '128k'>((initialSession?.downloadAudioBitrate as any) || '0');
   const [customFileName, setCustomFileName] = useState(initialSession?.customFileName || '');
@@ -819,7 +819,7 @@ export default function ClipFlowEditor() {
           body: JSON.stringify({
             url: activeUrl,
             format: captionFormat,
-            captionLang: captionLang || 'en',
+            captionLang: captionLang || 'auto',
             trimStart: effectiveTrimStart,
             trimEnd: effectiveTrimEnd,
             customFileName: customFileName || metadata?.title || 'Subtitles',
@@ -863,7 +863,7 @@ export default function ClipFlowEditor() {
               body: JSON.stringify({
                 url: activeUrl,
                 format: captionFormat,
-                captionLang: captionLang || 'en',
+                captionLang: captionLang || 'auto',
                 trimStart: effectiveTrimStart,
                 trimEnd: effectiveTrimEnd,
                 customFileName: customFileName || metadata?.title || 'Subtitles',

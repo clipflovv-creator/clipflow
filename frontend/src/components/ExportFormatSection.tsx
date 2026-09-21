@@ -34,8 +34,19 @@ interface ExportFormatSectionProps {
   setCaptionFormat: (format: CaptionFormat) => void;
   captionLang?: string;
   setCaptionLang?: (lang: string) => void;
+  availableCaptions?: string[];
   availableQualities?: QualityOption[];
   detectedMaxHeight?: number;
+}
+
+function getLanguageDisplayName(code: string): string {
+  try {
+    const clean = code.split('-')[0].toLowerCase();
+    const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(clean);
+    return name ? `${name} (${code})` : code;
+  } catch {
+    return code;
+  }
 }
 
 export const ExportFormatSection: React.FC<ExportFormatSectionProps> = ({
@@ -47,6 +58,9 @@ export const ExportFormatSection: React.FC<ExportFormatSectionProps> = ({
   setDownloadAudioBitrate,
   captionFormat,
   setCaptionFormat,
+  captionLang = 'auto',
+  setCaptionLang,
+  availableCaptions = [],
   availableQualities = [],
 }) => {
   // Always provide all quality options up to 4K (2160p, 1440p, 1080p, 720p, 480p, 360p, 240p)
@@ -197,9 +211,32 @@ export const ExportFormatSection: React.FC<ExportFormatSectionProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-950/80 border border-white/10">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Language</span>
-            <span className="text-xs font-bold text-zinc-200">English (Auto & Subtitles)</span>
+          <div className="space-y-1.5 px-3 py-2.5 rounded-lg bg-zinc-950/80 border border-white/10">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Language</span>
+              <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                {captionLang === 'auto' || !captionLang ? 'Auto Detect' : captionLang.toUpperCase()}
+              </span>
+            </div>
+            <select
+              value={captionLang || 'auto'}
+              onChange={(e) => setCaptionLang && setCaptionLang(e.target.value)}
+              className="w-full bg-black border border-white/15 rounded-md px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-white/40 cursor-pointer"
+            >
+              <option value="auto">✨ Automatic (Original Video Audio / Any)</option>
+              <option value="en">English (en)</option>
+              {Array.from(new Set([
+                ...(availableCaptions || []),
+                'ta', 'hi', 'te', 'es', 'fr', 'de', 'ja', 'ko', 'pt', 'ru', 'ar', 'zh', 'it'
+              ]))
+                .filter((c) => c !== 'en' && c !== 'auto' && !c.includes('en-'))
+                .map((code) => (
+                  <option key={code} value={code}>
+                    {getLanguageDisplayName(code)}
+                  </option>
+                ))}
+            </select>
           </div>
         </div>
       )}

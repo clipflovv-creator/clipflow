@@ -134,6 +134,8 @@ router.post('/export', requireAuth, async (req: AuthenticatedRequest, res: Respo
 
     emitProgress('⚡ Initializing export...', 5);
 
+    const effectiveCaptionLang = req.body.captionLang || subtitleLang || 'auto';
+
     // ── Handle Captions Export to Drive ──
     if (format === 'srt' || format === 'vtt' || format === 'txt' || format === 'captions') {
       const targetFmt = format === 'vtt' ? 'vtt' : format === 'txt' ? 'txt' : 'srt';
@@ -143,13 +145,13 @@ router.post('/export', requireAuth, async (req: AuthenticatedRequest, res: Respo
       const captionResult = await fetchAndTrimCaptions({
         url,
         format: targetFmt,
-        lang: subtitleLang,
+        lang: effectiveCaptionLang,
         trimStart: Number(trimStart) || 0,
         trimEnd: trimEnd !== undefined && Number(trimEnd) > Number(trimStart) ? Number(trimEnd) : undefined,
         relativeTimecodes: relativeTimecodes !== false,
       });
 
-      if (captionResult.cueCount === 0) {
+      if (!captionResult.hasSubtitles) {
         if (fs.existsSync(captionResult.filePath)) {
           try { fs.unlinkSync(captionResult.filePath); } catch {}
         }

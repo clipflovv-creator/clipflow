@@ -74,7 +74,7 @@ export function saveEditorSession(state: Partial<EditorSessionState>) {
         cropPosition: 'center',
         downloadFormat: 'mp4',
         captionFormat: 'srt',
-        captionLang: 'en',
+        captionLang: 'auto',
         downloadQuality: '1080p',
         downloadAudioBitrate: '0',
         customFileName: '',

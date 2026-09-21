@@ -292,12 +292,8 @@ export async function fetchAndTrimCaptions(
   const jobId = crypto.randomBytes(8).toString('hex');
   const tempPrefix = path.join(TEMP_DIR, `subs_${jobId}`);
 
-  // Safe targeted language list to prevent 429 rate limit
-  const englishLangs = 'en,en-orig,en-US,en-GB,en-IN,en-CA,en-AU,en-IE,en-NZ,en-ZA,en-en';
-  const targetLangs =
-    lang && lang !== 'en' && lang !== 'auto'
-      ? `${lang},${englishLangs}`
-      : englishLangs;
+  const isAuto = !lang || lang === 'auto';
+  const cleanLang = (lang || '').toLowerCase().trim();
 
   // Helper to find downloaded subtitle files
   const getSubFiles = () =>
@@ -319,10 +315,11 @@ export async function fetchAndTrimCaptions(
     baseArgs += ' --add-header "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"';
   }
 
-  // Tier 1: Download human-uploaded subtitles (fast, high quality, no 429)
+  // Tier 1: Download human-uploaded subtitles (clean, accurate, all languages)
   console.log(`[Captions Service] Tier 1: Fetching human subtitles for ${url}...`);
   try {
-    const cmd1 = `"${YTDLP_BIN}" ${baseArgs} --write-subs --sub-langs "${targetLangs},all" -o "${tempPrefix}.%(ext)s" "${url}"`;
+    const subLangs = !isAuto && cleanLang !== 'en' ? `${cleanLang},all` : 'all';
+    const cmd1 = `"${YTDLP_BIN}" ${baseArgs} --write-subs --sub-langs "${subLangs}" -o "${tempPrefix}.%(ext)s" "${url}"`;
     await execAsync(cmd1);
   } catch (err: any) {
     console.warn(`[Captions Service] Tier 1 note:`, err.message);
@@ -330,11 +327,15 @@ export async function fetchAndTrimCaptions(
 
   let files = getSubFiles();
 
-  // Tier 2: If no human subs, fetch auto-generated subs for targeted languages
+  // Tier 2: If no human subs, fetch auto-generated subtitles.
+  // CRITICAL: Always include ".*-orig" which fetches the video's original spoken language audio transcription directly without triggering 429 auto-translate rate limits!
   if (files.length === 0) {
-    console.log(`[Captions Service] Tier 2: No manual subs. Fetching auto-generated subs (${targetLangs})...`);
+    const autoLangs = isAuto
+      ? '.*-orig,en,en-orig,en-US'
+      : `${cleanLang},${cleanLang}-.*,.*-orig,en,en-orig`;
+    console.log(`[Captions Service] Tier 2: Fetching auto-generated subs (${autoLangs})...`);
     try {
-      const cmd2 = `"${YTDLP_BIN}" ${baseArgs} --write-auto-subs --sub-langs "${targetLangs}" -o "${tempPrefix}.%(ext)s" "${url}"`;
+      const cmd2 = `"${YTDLP_BIN}" ${baseArgs} --write-auto-subs --sub-langs "${autoLangs}" -o "${tempPrefix}.%(ext)s" "${url}"`;
       await execAsync(cmd2);
     } catch (err: any) {
       console.warn(`[Captions Service] Tier 2 note:`, err.message);
@@ -342,11 +343,11 @@ export async function fetchAndTrimCaptions(
     files = getSubFiles();
   }
 
-  // Tier 3: Fallback - native auto-sub in case video is non-English
+  // Tier 3: Fallback - try any available auto-sub
   if (files.length === 0) {
     console.log(`[Captions Service] Tier 3: Fetching native auto-sub fallback...`);
     try {
-      const cmd3 = `"${YTDLP_BIN}" ${baseArgs} --write-auto-subs --sub-langs "auto,orig,${lang},en" -o "${tempPrefix}.%(ext)s" "${url}"`;
+      const cmd3 = `"${YTDLP_BIN}" ${baseArgs} --write-auto-subs --sub-langs ".*" -o "${tempPrefix}.%(ext)s" "${url}"`;
       await execAsync(cmd3);
     } catch (err: any) {
       console.warn(`[Captions Service] Tier 3 note:`, err.message);
@@ -356,27 +357,29 @@ export async function fetchAndTrimCaptions(
 
   let rawContent = '';
   if (files.length > 0) {
-    const langLower = (lang || '').toLowerCase();
-    const matchFile =
-      (langLower && langLower !== 'en' && langLower !== 'auto'
-        ? files.find(f => {
-            const low = f.toLowerCase();
-            return low.includes(`.${langLower}.`) || low.includes(`.${langLower}-`) || low.endsWith(`.${langLower}.vtt`) || low.endsWith(`.${langLower}.srt`);
-          })
-        : null) ||
-      files.find(f => f.endsWith('.en.vtt') || f.endsWith('.en.srt')) ||
-      files.find(
-        f =>
-          f.includes('.en-orig.') ||
-          f.includes('.en-US.') ||
-          f.includes('.en-GB.') ||
-          f.includes('.en-IN.') ||
-          f.includes('.en-CA.') ||
-          f.includes('.en-AU.')
-      ) ||
-      files.find(f => f.includes('.en.') || f.includes('.en-') || f.includes('-en.')) ||
-      files.find(f => f.endsWith('.vtt') || f.endsWith('.srt')) ||
-      files[0];
+    // 1. If user specifically requested a non-auto language (e.g. 'es', 'ta', 'en')
+    let matchFile: string | undefined;
+    if (!isAuto && cleanLang) {
+      matchFile = files.find(f => {
+        const low = f.toLowerCase();
+        return (
+          low.includes(`.${cleanLang}.`) ||
+          low.includes(`.${cleanLang}-`) ||
+          low.endsWith(`.${cleanLang}.vtt`) ||
+          low.endsWith(`.${cleanLang}.srt`)
+        );
+      });
+    }
+
+    // 2. If 'auto' or no specific match: prefer original spoken audio language (.*-orig), then human sub, then English, then any
+    if (!matchFile) {
+      matchFile =
+        files.find(f => f.includes('-orig.') || f.includes('.orig.')) ||
+        files.find(f => f.endsWith('.en.vtt') || f.endsWith('.en.srt')) ||
+        files.find(f => f.includes('.en.') || f.includes('.en-')) ||
+        files.find(f => f.endsWith('.vtt') || f.endsWith('.srt')) ||
+        files[0];
+    }
 
     const subPath = path.join(TEMP_DIR, matchFile);
     try {
