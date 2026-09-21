@@ -222,7 +222,7 @@ export default function ClipFlowEditor() {
 
   // Export Settings & Framing
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1' | '4:5' | 'custom'>(initialSession?.aspectRatio || '16:9');
-  const [cropBox, setCropBox] = useState<CropBox>(initialSession?.cropBox || { x: 0.25, y: 0, width: 0.5, height: 1 });
+  const [cropBox, setCropBox] = useState<CropBox>(initialSession?.cropBox || { x: 0, y: 0, width: 1, height: 1 });
   const [containerDims, setContainerDims] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [videoDimensions, setVideoDimensions] = useState<{ width: number; height: number }>({
     width: initialSession?.metadata?.width || 1920,
@@ -904,7 +904,7 @@ export default function ClipFlowEditor() {
           aspectRatio: aspectRatio === '16:9' ? undefined : aspectRatio,
           fitMode: fitMode,
           cropPosition: cropPosition,
-          cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
+          cropBox: aspectRatio === 'custom' ? cropBox : undefined,
           audioBitrate: downloadAudioBitrate,
           onProgress: (msg) => setStatusMessage(msg),
         });
@@ -937,7 +937,7 @@ export default function ClipFlowEditor() {
         format: effectiveFormat,
         quality: downloadQuality,
         audioQuality: downloadAudioBitrate,
-        aspectRatio: aspectRatio,
+        aspectRatio: aspectRatio === '16:9' ? undefined : aspectRatio,
         cropBox: aspectRatio === 'custom' ? cropBox : undefined,
         fitMode: fitMode,
         customFileName: customFileName || metadata?.title || 'ClipFlow_Video',

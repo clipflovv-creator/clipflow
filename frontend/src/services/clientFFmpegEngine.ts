@@ -280,11 +280,11 @@ function buildCropFilter(
     return null;
   }
 
-  // If custom cropBox is provided
-  if (cropBox && cropBox.width > 0 && cropBox.height > 0) {
+  // If custom cropBox is provided (only when custom crop or non-16:9)
+  if (cropBox && cropBox.width > 0 && cropBox.height > 0 && aspectRatio === 'custom') {
     // If coordinates are normalized ratios (0 to 1)
     if (cropBox.width <= 1.0 && cropBox.height <= 1.0) {
-      if (cropBox.width >= 0.98 && cropBox.height >= 0.98 && (aspectRatio === '16:9' || !aspectRatio)) {
+      if (cropBox.width >= 0.999 && cropBox.height >= 0.999) {
         return null;
       }
       return `crop=trunc(iw*${cropBox.width}/2)*2:trunc(ih*${cropBox.height}/2)*2:trunc(iw*${cropBox.x}):trunc(ih*${cropBox.y})`;

@@ -69,7 +69,7 @@ export function saveEditorSession(state: Partial<EditorSessionState>) {
         currentTime: 0,
         trimRange: [0, 60],
         aspectRatio: '16:9',
-        cropBox: { x: 0.25, y: 0, width: 0.5, height: 1 },
+        cropBox: { x: 0, y: 0, width: 1, height: 1 },
         fitMode: 'crop',
         cropPosition: 'center',
         downloadFormat: 'mp4',
