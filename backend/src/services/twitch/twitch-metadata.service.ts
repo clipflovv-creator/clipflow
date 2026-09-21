@@ -26,6 +26,9 @@ export class TwitchMetadataService {
     // 1. Check in-memory cache (3 minutes TTL for live channels, 15 min for VODs)
     const cached = this.metadataCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
+      if (cached.data && (cached.data.is_live || cached.data.live_status === 'is_live') && cached.data.release_timestamp) {
+        cached.data.duration = Math.max(10, Math.floor(Date.now() / 1000 - cached.data.release_timestamp));
+      }
       return cached.data;
     }
 

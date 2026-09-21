@@ -168,8 +168,20 @@ export function TwitchPlayerView({
             handleMediaDurationUpdate(v.duration);
           }
         }}
+        onDurationChange={(e) => {
+          const v = e.currentTarget;
+          if (v.duration && v.duration > 0 && Number.isFinite(v.duration)) {
+            handleMediaDurationUpdate(v.duration);
+          }
+        }}
         onTimeUpdate={(e) => {
           const v = e.currentTarget;
+          if (v.duration && v.duration > 0 && Number.isFinite(v.duration) && v.duration > effectiveDuration) {
+            handleMediaDurationUpdate(v.duration);
+          }
+          if (v.currentTime > effectiveDuration) {
+            handleMediaDurationUpdate(v.currentTime);
+          }
           if (isSeekingRef.current) return;
           setCurrentTime(v.currentTime);
           const clipStart = trimRange[0];

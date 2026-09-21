@@ -172,8 +172,10 @@ export default function ClipFlowEditor() {
   const handleMediaDurationUpdate = (dur: number) => {
     if (!dur || dur <= 0 || !Number.isFinite(dur)) return;
     setActualDuration((prev) => {
-      if (prev > 0) return prev;
-      return dur;
+      if (dur > prev || prev === 0) {
+        return Math.round(dur);
+      }
+      return prev;
     });
   };
 
@@ -237,10 +239,10 @@ export default function ClipFlowEditor() {
     }
     const dur = metadata.duration && metadata.duration > 0 ? metadata.duration : 0;
     if (dur > 0) {
-      setActualDuration((prev) => (prev > 0 ? prev : dur));
+      setActualDuration((prev) => (dur > prev || prev === 0 ? Math.round(dur) : prev));
       setTrimRange((prev) => {
-        if (prev[0] === 0 && (prev[1] === 60 || prev[1] === 0 || prev[1] > dur)) {
-          return [0, dur];
+        if (prev[0] === 0 && (prev[1] === 60 || prev[1] === 0 || prev[1] < dur)) {
+          return [0, Math.round(dur)];
         }
         return prev;
       });
