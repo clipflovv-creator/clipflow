@@ -39,6 +39,11 @@ export interface SegmentFetchProgress {
   message: string;
 }
 
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
+  ((typeof window !== 'undefined' && window.location.port !== '5173')
+    ? window.location.origin
+    : 'http://localhost:3001');
+
 /**
  * Resolves a relative or absolute URL against a base URL.
  */
@@ -58,7 +63,14 @@ export async function parseHlsManifest(
   manifestUrl: string,
   quality?: string
 ): Promise<ManifestParseResult> {
-  const res = await fetch(manifestUrl);
+  let targetManifestUrl = manifestUrl;
+  if (
+    (targetManifestUrl.includes('cloudfront.net') || targetManifestUrl.includes('ttvnw.net')) &&
+    !targetManifestUrl.includes('/api/video/')
+  ) {
+    targetManifestUrl = `${BACKEND_URL}/api/video/hls-proxy?url=${encodeURIComponent(targetManifestUrl)}`;
+  }
+  const res = await fetch(targetManifestUrl);
   if (!res.ok) {
     throw new Error(`Failed to fetch HLS manifest (${res.status}): ${manifestUrl}`);
   }
@@ -237,7 +249,14 @@ export async function fetchRequiredHlsSegments(
   let totalBytes = 0;
 
   const fetchSegment = async (item: HlsSegment, sliceIndex: number) => {
-    const res = await fetch(item.resolvedUrl);
+    let fetchUrl = item.resolvedUrl;
+    if (
+      (fetchUrl.includes('cloudfront.net') || fetchUrl.includes('ttvnw.net')) &&
+      !fetchUrl.includes('/api/video/')
+    ) {
+      fetchUrl = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(fetchUrl)}`;
+    }
+    const res = await fetch(fetchUrl);
     if (!res.ok) {
       throw new Error(`Failed to download video segment ${item.index} (${res.status})`);
     }

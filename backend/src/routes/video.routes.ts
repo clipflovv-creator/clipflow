@@ -501,9 +501,6 @@ router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Respons
           if (absUrl.includes('.m3u8')) {
             return `${host}/api/video/hls-proxy?url=${encodeURIComponent(absUrl)}`;
           }
-          if (absUrl.includes('cloudfront.net') || absUrl.includes('ttvnw.net')) {
-            return absUrl;
-          }
           return `${host}/api/video/proxy-stream?url=${encodeURIComponent(absUrl)}`;
         } catch {
           return line;

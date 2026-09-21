@@ -2,6 +2,11 @@ import { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
 import type { TwitchPlayerProps } from './types';
 
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
+  ((typeof window !== 'undefined' && window.location.port !== '5173')
+    ? window.location.origin
+    : 'http://localhost:3001');
+
 export function TwitchPlayerView({
   videoElementRef,
   twitchHlsUrl,
@@ -42,6 +47,19 @@ export function TwitchPlayerView({
       const DefaultLoader = Hls.DefaultConfig.loader;
       class ProxyHlsLoader extends DefaultLoader {
         override load(context: any, config: any, callbacks: any) {
+          if (context && context.url && typeof context.url === 'string') {
+            const rawUrl = context.url;
+            if (
+              (rawUrl.includes('cloudfront.net') || rawUrl.includes('ttvnw.net')) &&
+              !rawUrl.includes('/api/video/')
+            ) {
+              if (rawUrl.includes('.m3u8')) {
+                context.url = `${BACKEND_URL}/api/video/hls-proxy?url=${encodeURIComponent(rawUrl)}`;
+              } else {
+                context.url = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(rawUrl)}`;
+              }
+            }
+          }
           super.load(context, config, callbacks);
         }
       }
