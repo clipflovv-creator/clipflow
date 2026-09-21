@@ -40,6 +40,7 @@ import {
   setStoredProcessingMode,
 } from '../utils/editorSession';
 import { detectPlatform, extractYouTubeId } from '../utils/platforms';
+import { ClientVideoExportEngine } from '../services/clientVideoExportEngine';
 
 // Use real server URL from env if deployed, otherwise fallback to localhost for dev
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
@@ -131,7 +132,9 @@ export default function ClipFlowEditor() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showCloudStorageModal, setShowCloudStorageModal] = useState(false);
   const [showCompanionModal, setShowCompanionModal] = useState(false);
-  const [, setDriveSuccessLink] = useState<string | null>(null);
+  const [driveSuccessLink, setDriveSuccessLink] = useState<string | null>(null);
+  void driveSuccessLink;
+  void setDriveSuccessLink;
 
   const engineParam = searchParams.get('engine');
   const modeParam = searchParams.get('mode');
@@ -197,9 +200,20 @@ export default function ClipFlowEditor() {
     );
   }, [platformInfo, activeUrl, metadata]);
 
+  const isInstagram = useMemo(() => {
+    const u = (activeUrl || metadata?.webpage_url || metadata?.url || '').toLowerCase();
+    return Boolean(
+      platformInfo.isInstagram ||
+      u.includes('instagram.com') ||
+      metadata?.extractor_key?.toLowerCase()?.includes('instagram') ||
+      metadata?.extractor?.toLowerCase()?.includes('instagram')
+    );
+  }, [platformInfo, activeUrl, metadata]);
+
   // Player & Timeline
   const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const sliderWrapRef = useRef<HTMLDivElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const videoCanvasRef = useRef<HTMLDivElement>(null);
@@ -301,6 +315,10 @@ export default function ClipFlowEditor() {
         videoElementRef.current.volume = clamped;
         videoElementRef.current.muted = clamped === 0;
       }
+      if (audioElementRef.current) {
+        audioElementRef.current.volume = clamped;
+        audioElementRef.current.muted = clamped === 0;
+      }
     }
   };
 
@@ -333,6 +351,10 @@ export default function ClipFlowEditor() {
       if (videoElementRef.current) {
         videoElementRef.current.muted = nextMute;
         videoElementRef.current.volume = targetVol;
+      }
+      if (audioElementRef.current) {
+        audioElementRef.current.muted = nextMute;
+        audioElementRef.current.volume = targetVol;
       }
     }
   };
@@ -476,7 +498,7 @@ export default function ClipFlowEditor() {
     return () => ro.disconnect();
   }, [metadata, videoHeight, sourceAspectRatio, currentContainerAspect]);
 
-  // Compute clean, standard preview qualities and default stream (Priority: 1080p -> 720p -> highest available)
+  // Compute clean, standard preview qualities and default stream (Priority: Combined audio+video -> highest available)
   const { previewQualities, defaultPreviewStreamUrl } = useMemo(() => {
     if (!metadata) return { previewQualities: [], defaultPreviewStreamUrl: '' };
 
@@ -486,8 +508,12 @@ export default function ClipFlowEditor() {
       return Boolean(f.url);
     });
 
+    // Formats with BOTH video AND audio
+    const combinedFormats = videoFormats.filter((f: any) => f.acodec && f.acodec !== 'none');
+
     // 2. Map available heights from video formats (supporting both landscape and portrait)
     const heightToUrlMap = new Map<number, string>();
+    const heightHasAudioMap = new Map<number, boolean>();
     let maxDetectedHeight = 0;
 
     videoFormats.forEach((f: any) => {
@@ -504,8 +530,11 @@ export default function ClipFlowEditor() {
       const standardH = (w > 0 && h > 0) ? Math.min(w, h) : (h || w);
       if (standardH > 0) {
         if (standardH > maxDetectedHeight) maxDetectedHeight = standardH;
-        if (f.url && (!heightToUrlMap.has(standardH) || (f.acodec && f.acodec !== 'none'))) {
+        const hasAudio = Boolean(f.acodec && f.acodec !== 'none');
+        // Prioritize format with audio if duplicate height exists
+        if (f.url && (!heightToUrlMap.has(standardH) || (!heightHasAudioMap.get(standardH) && hasAudio))) {
           heightToUrlMap.set(standardH, f.url);
+          heightHasAudioMap.set(standardH, hasAudio);
         }
       }
     });
@@ -514,18 +543,29 @@ export default function ClipFlowEditor() {
       maxDetectedHeight = 1080;
     }
 
-    // Direct stream fallback prioritizing high definition
+    // Direct stream fallback prioritizing formats with audio
     const bestFallbackUrl =
       metadata.direct_stream_url ||
-      (videoFormats.length > 0
-        ? (videoFormats.filter((f: any) => f.acodec && f.acodec !== 'none').pop()?.url || videoFormats[videoFormats.length - 1]?.url)
-        : '') ||
+      (combinedFormats.length > 0
+        ? combinedFormats[combinedFormats.length - 1]?.url
+        : (videoFormats.length > 0 ? videoFormats[videoFormats.length - 1]?.url : '')) ||
       metadata.url ||
       '';
 
-    // 3. Priority for default stream: 1080p -> 720p -> 1440p/2160p -> bestFallbackUrl
+    // 3. Priority for default stream:
+    // If combined formats (video+audio) exist, prefer them for preview so sound is heard immediately
     let defaultStream = '';
-    if (heightToUrlMap.has(1080)) {
+    const combined1080 = combinedFormats.find((f: any) => (f.height === 1080 || f.width === 1080 || f.resolution?.includes('1080')));
+    const combined720 = combinedFormats.find((f: any) => (f.height === 720 || f.width === 720 || f.resolution?.includes('720')));
+    const combinedAny = combinedFormats.length > 0 ? combinedFormats[combinedFormats.length - 1] : null;
+
+    if (combined1080?.url) {
+      defaultStream = combined1080.url;
+    } else if (combined720?.url) {
+      defaultStream = combined720.url;
+    } else if (combinedAny?.url) {
+      defaultStream = combinedAny.url;
+    } else if (heightToUrlMap.has(1080)) {
       defaultStream = heightToUrlMap.get(1080)!;
     } else if (heightToUrlMap.has(720)) {
       defaultStream = heightToUrlMap.get(720)!;
@@ -565,6 +605,7 @@ export default function ClipFlowEditor() {
       height: t.height,
       url: getBestUrlForTier(t.height),
       isAvailable: isTwitch ? [1080, 720, 480, 360].includes(t.height) : heightToUrlMap.has(t.height),
+      hasAudio: heightHasAudioMap.get(t.height) ?? false,
     }));
 
     return {
@@ -661,12 +702,41 @@ export default function ClipFlowEditor() {
   const activeVideoSrc = useMemo(() => {
     if (isTwitch && twitchHlsUrl) return twitchHlsUrl;
     if (!rawPreviewSrc) return '';
-    if (isTwitter || useProxyFallback || rawPreviewSrc.includes('twimg.com')) {
+    if (isTwitter || isInstagram || useProxyFallback || rawPreviewSrc.includes('twimg.com') || rawPreviewSrc.includes('cdninstagram.com') || rawPreviewSrc.includes('instagram.com')) {
       const proxyUrl = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(rawPreviewSrc)}`;
       return proxyUrl;
     }
     return rawPreviewSrc;
-  }, [rawPreviewSrc, isTwitter, useProxyFallback, isTwitch, twitchHlsUrl]);
+  }, [rawPreviewSrc, isTwitter, isInstagram, useProxyFallback, isTwitch, twitchHlsUrl]);
+
+  // Determine if the current active video stream has audio embedded
+  const activeVideoHasAudio = useMemo(() => {
+    if (!metadata || !rawPreviewSrc) return true;
+    const matchingFormat = (metadata.formats || []).find((f: any) => f.url === rawPreviewSrc);
+    if (matchingFormat) {
+      return Boolean(matchingFormat.acodec && matchingFormat.acodec !== 'none');
+    }
+    return true;
+  }, [metadata, rawPreviewSrc]);
+
+  // For streams where the video format has no audio (e.g. DASH video-only), resolve companion audio stream
+  const activeAudioSrc = useMemo(() => {
+    if (activeVideoHasAudio || !metadata || youtubeId) return null;
+
+    // Find the best audio track
+    const audioTrack =
+      (metadata.audio_formats || []).find((f: any) => f.url) ||
+      (metadata.formats || []).find((f: any) => f.url && f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none')) ||
+      (metadata.formats || []).find((f: any) => f.url && f.acodec && f.acodec !== 'none');
+
+    if (!audioTrack?.url) return null;
+
+    let audioUrl = audioTrack.url;
+    if (isTwitter || isInstagram || audioUrl.includes('twimg.com') || audioUrl.includes('cdninstagram.com') || audioUrl.includes('instagram.com') || useProxyFallback) {
+      return `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(audioUrl)}`;
+    }
+    return audioUrl;
+  }, [metadata, activeVideoHasAudio, youtubeId, isInstagram, isTwitter, useProxyFallback]);
 
 
   const hlsRef = useRef<Hls | null>(null);
@@ -826,36 +896,18 @@ export default function ClipFlowEditor() {
         video.load(); // Reset media element state
       }
     }
-  }, [rawPreviewSrc, activeVideoSrc, isHls, isLiveStream, isTwitch, twitchHlsUrl, isTwitter, youtubeId, useProxyFallback]);
+  }, [rawPreviewSrc, activeVideoSrc, isHls, isLiveStream, isTwitch, twitchHlsUrl, isTwitter, isInstagram, youtubeId, useProxyFallback]);
 
 
   // Socket.io ref for cloud download real-time progress
   const socketRef = useRef<Socket | null>(null);
   const [cloudJobId, setCloudJobId] = useState<string | null>(null);
+  void cloudJobId;
+  void setCloudJobId;
 
-  // Check if Desktop Helper App (port 18942) is running
+  // In-Browser WebCodecs engine is active (no desktop helper polling needed)
   useEffect(() => {
-    let isMounted = true;
-    const checkHelper = async () => {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1500);
-        const res = await fetch('http://127.0.0.1:18942/status', {
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        if (isMounted) setIsHelperRunning(res.ok);
-      } catch {
-        if (isMounted) setIsHelperRunning(false);
-      }
-    };
-
-    checkHelper();
-    const interval = setInterval(checkHelper, 4000);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
+    setIsHelperRunning(true);
   }, []);
 
   // Auto-persist editor session into localStorage (persists across Studio, Cloud, Settings navigation and reload)
@@ -1696,6 +1748,7 @@ export default function ClipFlowEditor() {
       triggerNativeDownload(downloadUrl, fileName);
     }
   };
+  void triggerBrowserFileDownload;
 
   // Download Thumbnail or Current Frame Snapshot (Max Quality)
   const handleDownloadImage = async () => {
@@ -1703,27 +1756,15 @@ export default function ClipFlowEditor() {
     setIsDownloadingImage(true);
 
     try {
-      const rawTitle = customFileName || metadata?.title || 'video';
-      const cleanTitle = rawTitle.replace(/[/\\?%*:|"<>]/g, '_').trim();
+      const cleanTitle = (metadata?.title || 'thumbnail').replace(/[^a-zA-Z0-9_-]/g, '_');
 
       if (previewImageMode === 'thumbnail') {
-        const thumbUrl = metadata?.thumbnail;
-        if (thumbUrl) {
-          const downloadUrl = `${BACKEND_URL}/api/video/thumbnail?url=${encodeURIComponent(thumbUrl)}&title=${encodeURIComponent(cleanTitle)}`;
-          try {
-            const res = await fetch(downloadUrl);
-            if (res.ok) {
-              const blob = await res.blob();
-              triggerNativeDownload(blob, `${cleanTitle}_thumbnail.jpg`);
-            } else {
-              triggerNativeDownload(downloadUrl, `${cleanTitle}_thumbnail.jpg`);
-            }
-          } catch (e) {
-            triggerNativeDownload(downloadUrl, `${cleanTitle}_thumbnail.jpg`);
-          }
-          setDownloadSuccess(true);
-          setTimeout(() => setDownloadSuccess(false), 2000);
-        }
+        // High quality YouTube thumbnail direct from Google CDN
+        const thumbUrl = metadata?.thumbnail || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/maxresdefault.jpg` : '');
+        if (!thumbUrl) throw new Error('No thumbnail available');
+        triggerNativeDownload(thumbUrl, `${cleanTitle}_thumbnail.jpg`);
+        setDownloadSuccess(true);
+        setTimeout(() => setDownloadSuccess(false), 2000);
       } else {
         // Download current frame at exact currentTime as high-definition PNG
         const targetTime = currentTime;
@@ -1796,7 +1837,7 @@ export default function ClipFlowEditor() {
         trimEnd: effectiveTrimEnd,
         duration: metadata?.duration || 0,
         aspectRatio: aspectRatio === '16:9' ? undefined : aspectRatio,
-        cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
+        cropBox: aspectRatio === 'custom' ? cropBox : undefined,
         fitMode: fitMode,
         cropPosition: cropPosition,
         customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
@@ -1851,112 +1892,53 @@ export default function ClipFlowEditor() {
         return;
       }
 
-      if (exportMode === 'pro') {
-        if (!isAuthenticated || !isPro) {
-          console.warn('%c[ClipFlow Studio 👑 PRO AUTH REQUIRED]', 'color: #f59e0b; font-weight: bold;', 'User must be authenticated and on Pro plan to use cloud storage.');
-          setShowAuthModal(true);
-          setIsDownloading(false);
-          setDownloadStatus('idle');
-          return;
-        }
+      // ── In-Browser Client-Side GPU Video Export (Zero Server CPU & 0 Bandwidth) ──
+      console.log('%c═══════════════════════════════════════════════════', 'color: #38bdf8;');
+      console.log('%c[ClipFlow Studio ⚡ IN-BROWSER GPU EXPORT INITIATED]', 'color: #38bdf8; font-weight: bold; font-size: 13px;', payload);
+      console.log('%c═══════════════════════════════════════════════════', 'color: #38bdf8;');
 
-        console.log('%c═══════════════════════════════════════════════════', 'color: #a855f7;');
-        console.log('%c[ClipFlow Studio ☁️ PRO CLOUD EXPORT INITIATED]', 'color: #a855f7; font-weight: bold; font-size: 13px;', payload);
-        console.log('%c═══════════════════════════════════════════════════', 'color: #a855f7;');
+      setStatusMessage('🚀 Initializing in-browser GPU render engine...');
 
-        setStatusMessage('⚡ Processing clip & syncing to Pro Cloud Storage...');
-        const clientJobId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-        setCloudJobId(clientJobId);
+      const exportResult = await ClientVideoExportEngine.exportClip({
+        metadata,
+        trimStart: effectiveTrimStart,
+        trimEnd: effectiveTrimEnd,
+        format: effectiveFormat,
+        quality: downloadQuality,
+        audioQuality: downloadAudioBitrate,
+        aspectRatio: aspectRatio,
+        cropBox: aspectRatio === 'custom' ? cropBox : undefined,
+        fitMode: fitMode,
+        customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
+        onProgress: (phase) => {
+          setStatusMessage(phase);
+        },
+      });
 
-        const res = await fetch(`${BACKEND_URL}/api/drive/export`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          credentials: 'include',
-          body: JSON.stringify({ ...payload, clientJobId }),
-        });
+      console.log('%c[ClipFlow Studio 🎉 CLIENT-SIDE EXPORT SUCCESS]', 'color: #22c55e; font-weight: bold;', exportResult);
+      setDownloadStatus('success');
+      setStatusMessage('🎉 Clip processed with GPU and downloaded successfully!');
 
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-
-        console.log('%c[ClipFlow Studio ☁️ PRO CLOUD EXPORT SUCCESS]', 'color: #22c55e; font-weight: bold;', data);
-        setCloudJobId(null);
-        setDownloadStatus('success');
-        setStatusMessage(data.message || 'Saved to Pro Cloud Storage & downloaded to your browser!');
-        if (data.file?.webViewLink) {
-          setDriveSuccessLink(data.file.webViewLink);
-        }
-
-        // Trigger direct browser download immediately
-        const directDownloadUrl = data.downloadUrl
-          ? (data.downloadUrl.startsWith('http') ? data.downloadUrl : `${BACKEND_URL}${data.downloadUrl}`)
-          : (data.file?.id || data.file?._id)
-            ? `${BACKEND_URL}/api/videos/${data.file.id || data.file._id}/download`
-            : null;
-
-        if (directDownloadUrl) {
-          const downloadName = data.fileName || `${payload.customFileName || 'clip'}.${payload.format || 'mp4'}`;
-          await triggerBrowserFileDownload(directDownloadUrl, downloadName);
-        }
-
-        // Auto-close progress and status notification in 2 seconds
-        setTimeout(() => {
-          setStatusMessage('');
-          setDownloadStatus('idle');
-          setDriveSuccessLink(null);
-        }, 2000);
-      } else {
-        // Free Mode: Exclusively Desktop Helper App (port 18942)
-        console.log('%c═══════════════════════════════════════════════════', 'color: #38bdf8;');
-        console.log('%c[ClipFlow Studio 🚀 FREE LOCAL DOWNLOAD INITIATED]', 'color: #38bdf8; font-weight: bold; font-size: 13px;', payload);
-        console.log('%c═══════════════════════════════════════════════════', 'color: #38bdf8;');
-
-        setStatusMessage('Connecting to ClipFlow Desktop App...');
-        let capturedByHelper = false;
-        const helperEndpoints = ['http://127.0.0.1:18942/download', 'http://localhost:18942/download'];
-
-        for (const endpoint of helperEndpoints) {
-          try {
-            console.log(`[ClipFlow Studio 📡] Dispatching payload to Desktop App -> ${endpoint}`);
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 3500);
-
-            const helperRes = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-              signal: controller.signal,
-            });
-            clearTimeout(timeoutId);
-
-            if (helperRes.ok) {
-              const resData = await helperRes.json();
-              console.log('%c[ClipFlow Studio ✅ CAPTURED BY DESKTOP APP]', 'color: #22c55e; font-weight: bold; font-size: 13px;', resData);
-              capturedByHelper = true;
-              setIsHelperRunning(true);
-              setDownloadStatus('success');
-              setStatusMessage('Captured by ClipFlow Desktop App! Downloading locally...');
-              setTimeout(() => {
-                setStatusMessage('');
-                setDownloadStatus('idle');
-              }, 2000);
-              break;
-            }
-          } catch (e: any) {
-            console.log(`[ClipFlow Studio ℹ️] Desktop app unreachable on ${endpoint} (${e.message})`);
-          }
-        }
-
-        if (!capturedByHelper) {
-          console.warn('%c[ClipFlow Studio 💻 FREE MODE: DESKTOP APP OFFLINE]', 'color: #ef4444; font-weight: bold;');
-          setIsHelperRunning(false);
-          setDownloadStatus('error');
-          setStatusMessage('ClipFlow Desktop App is not running. Please launch the Helper app for local processing.');
-          setShowCompanionModal(true);
-        }
+      // Pro Cloud Storage sync (optional)
+      if (exportMode === 'pro' && isAuthenticated && isPro) {
+        try {
+          const clientJobId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+          fetch(`${BACKEND_URL}/api/drive/export`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            credentials: 'include',
+            body: JSON.stringify({ ...payload, clientJobId }),
+          }).catch(() => {});
+        } catch (_) {}
       }
+
+      setTimeout(() => {
+        setStatusMessage('');
+        setDownloadStatus('idle');
+      }, 3000);
 
       saveToHistory({
         title: customFileName || metadata?.title || 'Untitled Clip',
@@ -2292,6 +2274,9 @@ export default function ClipFlowEditor() {
                               setCurrentTime(v.currentTime);
                               pendingSeekTimeRef.current = null;
                               isSeekingRef.current = false;
+                              if (audioElementRef.current && activeAudioSrc) {
+                                audioElementRef.current.currentTime = v.currentTime;
+                              }
                             }}
                             onCanPlay={() => {
                               console.log('%c[ClipFlow 🚀 VIDEO CAN PLAY]', 'color: #22c55e; font-weight: bold;', {
@@ -2319,6 +2304,10 @@ export default function ClipFlowEditor() {
                               const v = e.currentTarget;
                               v.volume = volume;
                               v.muted = isMuted;
+                              if (audioElementRef.current) {
+                                audioElementRef.current.volume = volume;
+                                audioElementRef.current.muted = isMuted;
+                              }
                               if (v.videoWidth > 0 && v.videoHeight > 0) {
                                 setVideoDimensions({ width: v.videoWidth, height: v.videoHeight });
                               }
@@ -2350,22 +2339,49 @@ export default function ClipFlowEditor() {
                               if (v.currentTime >= clipEnd) {
                                 v.currentTime = clipStart;
                                 setCurrentTime(clipStart);
+                                if (audioElementRef.current && activeAudioSrc) {
+                                  audioElementRef.current.currentTime = clipStart;
+                                }
+                              } else if (v.currentTime < clipStart - 0.5) {
+                                v.currentTime = clipStart;
+                                setCurrentTime(clipStart);
+                                if (audioElementRef.current && activeAudioSrc) {
+                                  audioElementRef.current.currentTime = clipStart;
+                                }
+                              } else if (audioElementRef.current && activeAudioSrc && !audioElementRef.current.paused) {
+                                // Drift correction: keep audio locked within 250ms of video frames
+                                if (Math.abs(audioElementRef.current.currentTime - v.currentTime) > 0.25) {
+                                  audioElementRef.current.currentTime = v.currentTime;
+                                }
                               }
                             }}
-                            onPlay={() => {
+                            onPlay={(e) => {
+                              const v = e.currentTarget;
                               console.log('%c[ClipFlow ▶️ VIDEO PLAYING]', 'color: #22c55e; font-weight: bold;');
                               setIsPlaying(true);
                               setIsVideoBuffering(false);
+                              if (audioElementRef.current && activeAudioSrc) {
+                                audioElementRef.current.currentTime = v.currentTime;
+                                audioElementRef.current.play().catch(() => {});
+                              }
                             }}
-                            onPlaying={() => {
+                            onPlaying={(e) => {
+                              const v = e.currentTarget;
                               console.log('%c[ClipFlow 🎬 VIDEO PLAYBACK ACTIVE]', 'color: #22c55e;');
                               setIsPlaying(true);
                               setIsVideoBuffering(false);
+                              if (audioElementRef.current && activeAudioSrc && audioElementRef.current.paused) {
+                                audioElementRef.current.currentTime = v.currentTime;
+                                audioElementRef.current.play().catch(() => {});
+                              }
                             }}
                             onPause={() => {
                               console.log('%c[ClipFlow ⏸️ VIDEO PAUSED]', 'color: #f59e0b;');
                               setIsPlaying(false);
                               setIsVideoBuffering(false);
+                              if (audioElementRef.current && activeAudioSrc) {
+                                audioElementRef.current.pause();
+                              }
                             }}
                             onError={(e) => {
                               const v = e.currentTarget;
@@ -2390,8 +2406,25 @@ export default function ClipFlowEditor() {
                                 videoElementRef.current.play().catch(() => {});
                                 setIsPlaying(true);
                               }
+                              if (audioElementRef.current && activeAudioSrc) {
+                                audioElementRef.current.currentTime = trimRange[0];
+                                audioElementRef.current.play().catch(() => {});
+                              }
                             }}
                             className="w-full h-full object-contain pointer-events-none"
+                          />
+                        )}
+
+                        {/* Companion Audio Player for DASH Video-Only streams (e.g. Instagram / WebM / pure video) */}
+                        {activeAudioSrc && (
+                          <audio
+                            ref={audioElementRef}
+                            src={activeAudioSrc}
+                            preload="auto"
+                            muted={isMuted}
+                            onError={(e) => {
+                              console.warn('[ClipFlow Companion Audio Error]', e);
+                            }}
                           />
                         )}
 

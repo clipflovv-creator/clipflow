@@ -21,6 +21,8 @@
     "framer-motion": "^12.42.2",
     "hls.js": "^1.7.3",
     "lucide-react": "^1.24.0",
+    "mp4-muxer": "^5.2.2",
+    "mp4box": "^2.4.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",

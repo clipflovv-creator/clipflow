@@ -168,12 +168,74 @@ router.get('/hls-proxy', async (req: Request, res: Response) => {
 });
 
 // ─── OPTIONS preflight for CORS video streaming & frame extraction ─────────
-router.options(['/proxy', '/frame', '/thumbnail', '/hls-proxy', '/proxy-stream'], (_req: Request, res: Response) => {
+router.options(['/proxy', '/frame', '/thumbnail', '/hls-proxy', '/proxy-stream', '/stream-range'], (_req: Request, res: Response) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Authorization');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
   res.status(204).end();
+});
+
+// ─── /stream-range (Zero-buffering HTTP Range Relay with CORS) ─────────────
+router.get('/stream-range', async (req: Request, res: Response) => {
+  const targetUrl = req.query.url as string;
+  if (!targetUrl) return res.status(400).json({ error: 'URL parameter is required' });
+
+  try {
+    let userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    if (targetUrl.includes('googlevideo.com') || targetUrl.includes('youtube.com')) {
+      if (targetUrl.includes('c=IOS')) {
+        userAgent = 'com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)';
+      } else {
+        userAgent = 'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip';
+      }
+    }
+
+    const fetchHeaders: Record<string, string> = {
+      'User-Agent': userAgent,
+      'Accept': '*/*',
+    };
+
+    if (targetUrl.includes('youtube.com') || targetUrl.includes('googlevideo.com')) {
+      fetchHeaders['Referer'] = 'https://www.youtube.com/';
+      fetchHeaders['Origin'] = 'https://www.youtube.com';
+    } else if (targetUrl.includes('instagram.com') || targetUrl.includes('cdninstagram.com')) {
+      fetchHeaders['Referer'] = 'https://www.instagram.com/';
+      fetchHeaders['Origin'] = 'https://www.instagram.com';
+    } else if (targetUrl.includes('twimg.com') || targetUrl.includes('twitter.com') || targetUrl.includes('x.com')) {
+      fetchHeaders['Referer'] = 'https://twitter.com/';
+    } else if (targetUrl.includes('twitch.tv') || targetUrl.includes('ttvnw.net') || targetUrl.includes('cloudfront.net')) {
+      fetchHeaders['Referer'] = 'https://www.twitch.tv/';
+      fetchHeaders['Origin'] = 'https://www.twitch.tv';
+    }
+
+    const reqRange = req.headers.range;
+    if (reqRange) {
+      fetchHeaders['range'] = reqRange;
+    }
+
+    const response = await fetch(targetUrl, { headers: fetchHeaders });
+
+    res.status(response.status);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Authorization');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Type');
+
+    ['content-type', 'content-length', 'content-range', 'accept-ranges'].forEach((h) => {
+      const val = response.headers.get(h);
+      if (val) res.setHeader(h, val);
+    });
+
+    if (!response.body) return res.end();
+
+    // @ts-ignore
+    const nodeStream = Readable.fromWeb(response.body);
+    nodeStream.pipe(res);
+  } catch (err: any) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
 });
 
 
@@ -368,7 +430,7 @@ router.get('/frame', async (req: Request, res: Response) => {
  * High-performance streaming proxy for Twitter, Instagram, TikTok, Reddit, HLS/MP4 streams
  * Forwards Range requests (206 Partial Content) with zero CORS restrictions.
  */
-router.get('/proxy-stream', async (req: Request, res: Response) => {
+router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Response) => {
   const streamUrl = req.query.url as string;
   if (!streamUrl) return res.status(400).json({ error: 'url is required' });
 
@@ -524,18 +586,18 @@ router.post('/metadata', async (req: Request, res: Response) => {
 
     // Prioritize formats with BOTH video AND audio so UI preview can play sound
     const audioAndVideoFormats = (metadata.formats || []).filter(
-      (f: any) => f.url && f.acodec !== 'none' && f.vcodec !== 'none' && !f.format_id?.endsWith('v')
-    );
-    const audioFormats = (metadata.formats || []).filter(
-      (f: any) => f.url && f.acodec !== 'none' && !f.format_id?.endsWith('v')
+      (f: any) => f.url && f.acodec && f.acodec !== 'none' && f.vcodec && f.vcodec !== 'none'
     );
     const progressiveMp4 = (metadata.formats || []).filter(
-      (f: any) => f.url && f.vcodec !== 'none' && f.acodec !== 'none'
+      (f: any) => f.url && f.vcodec && f.vcodec !== 'none' && f.acodec && f.acodec !== 'none'
     );
 
-    // Try finding 1080p or 720p format first
+    // Try finding 1080p, 720p, or best available combined format first
     const format1080 = progressiveMp4.find((f: any) => (f.height === 1080 || f.width === 1080 || f.resolution?.includes('1080')));
     const format720 = progressiveMp4.find((f: any) => (f.height === 720 || f.width === 720 || f.resolution?.includes('720')));
+
+    // Only video formats (never pick an audio-only stream as directStreamUrl which is meant for video display)
+    const videoFormats = (metadata.formats || []).filter((f: any) => f.url && f.vcodec && f.vcodec !== 'none');
 
     const directStreamUrl =
       format1080?.url ||
@@ -543,12 +605,8 @@ router.post('/metadata', async (req: Request, res: Response) => {
       (progressiveMp4.length > 0 ? progressiveMp4[progressiveMp4.length - 1].url : undefined) ||
       (audioAndVideoFormats.length > 0 ? audioAndVideoFormats[audioAndVideoFormats.length - 1].url : undefined) ||
       metadata.direct_stream_url ||
-      (audioFormats.length > 0 ? audioFormats[audioFormats.length - 1].url : undefined) ||
       metadata.url ||
-      (metadata.formats && metadata.formats.length > 0
-        ? (metadata.formats.filter((f: any) => f.url && f.vcodec !== 'none').pop()?.url ||
-           metadata.formats[metadata.formats.length - 1]?.url)
-        : undefined);
+      (videoFormats.length > 0 ? videoFormats[videoFormats.length - 1]?.url : undefined);
 
     let parsedDuration = typeof metadata.duration === 'number' && metadata.duration > 0 ? metadata.duration : undefined;
     if (!parsedDuration && metadata.duration_string) {
@@ -610,19 +668,45 @@ router.post('/metadata', async (req: Request, res: Response) => {
       webpage_url: vodUrl,
       subtitles: Object.keys(metadata.subtitles || {}),
       automatic_captions: Object.keys(metadata.automatic_captions || {}),
-      formats: metadata.formats?.map((f: any) => ({
+      formats: (metadata.formats || []).map((f: any) => ({
         format_id: f.format_id,
         ext: f.ext,
         resolution: f.resolution,
         height: f.height,
         width: f.width,
+        fps: f.fps,
         filesize: f.filesize,
         vcodec: f.vcodec,
         acodec: f.acodec,
         format_note: f.format_note,
         tbr: f.tbr,
+        abr: f.abr,
         url: f.url,
-      })) || [],
+      })),
+      video_formats: (metadata.formats || [])
+        .filter((f: any) => f.url && f.vcodec && f.vcodec !== 'none')
+        .map((f: any) => ({
+          format_id: f.format_id,
+          ext: f.ext,
+          height: f.height,
+          width: f.width,
+          fps: f.fps,
+          vcodec: f.vcodec,
+          acodec: f.acodec,
+          tbr: f.tbr,
+          filesize: f.filesize,
+          url: f.url,
+        })),
+      audio_formats: (metadata.formats || [])
+        .filter((f: any) => f.url && f.acodec && f.acodec !== 'none')
+        .map((f: any) => ({
+          format_id: f.format_id,
+          ext: f.ext,
+          acodec: f.acodec,
+          abr: f.abr,
+          filesize: f.filesize,
+          url: f.url,
+        })),
     };
 
     res.json(response);

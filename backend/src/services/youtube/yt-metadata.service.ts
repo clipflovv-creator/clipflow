@@ -27,14 +27,14 @@ export class YouTubeMetadataService {
   static async getMetadata(url: string, ytDlpBin: string, retries = 1): Promise<any> {
     const cookiesFile = findCookiesFile();
     const cookieArg = cookiesFile ? `--cookies "${cookiesFile}" ` : '';
-    const flags = `--js-runtimes node ${cookieArg}--no-warnings --no-check-certificate --dump-json`;
+    const flags = `--js-runtimes node ${cookieArg}--no-warnings --no-check-certificate --no-comments --no-playlist --dump-json`;
 
     let lastErr: any;
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const { stdout } = await execAsync(
           `"${ytDlpBin}" ${flags} "${url}"`,
-          { maxBuffer: 1024 * 1024 * 50 }
+          { maxBuffer: 1024 * 1024 * 100 }
         );
         return JSON.parse(stdout);
       } catch (err: any) {
