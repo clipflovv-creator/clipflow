@@ -34,7 +34,7 @@ export function resolveRelayUrl(directUrl: string): string {
   }
 
   // 2. Dev / Fallback: Backend streaming range proxy (Pipes directly without disk storage)
-  return `${BACKEND_URL}/api/video/stream-range?url=${encodeURIComponent(directUrl)}`;
+  return `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(directUrl)}`;
 }
 
 /**

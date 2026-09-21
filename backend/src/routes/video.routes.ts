@@ -391,7 +391,7 @@ router.get('/frame', async (req: Request, res: Response) => {
  * High-performance streaming proxy for Twitter, Instagram, TikTok, Reddit, HLS/MP4 streams
  * Forwards Range requests (206 Partial Content) with zero CORS restrictions.
  */
-router.get('/proxy-stream', async (req: Request, res: Response) => {
+router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Response) => {
   const streamUrl = req.query.url as string;
   if (!streamUrl) return res.status(400).json({ error: 'url is required' });
 

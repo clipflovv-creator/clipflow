@@ -80,13 +80,13 @@ export async function getFFmpeg(onProgress?: (stage: string, percent: number) =>
 }
 
 /**
- * Downloads a single chunk (max 1 MB to strictly respect YouTube CDN limits).
+ * Downloads a single chunk for YouTube CDN.
  */
 async function fetchStreamChunk(
   directUrl: string,
   startByte: number,
   endByte: number
-): Promise<Uint8Array> {
+): Promise<{ chunk: Uint8Array; isEof: boolean }> {
   const relayUrl = resolveRelayUrl(directUrl);
   const response = await fetch(relayUrl, {
     headers: {
@@ -94,16 +94,87 @@ async function fetchStreamChunk(
     },
   });
 
+  // 416 means startByte is beyond the end of the file (EOF reached)
+  if (response.status === 416) {
+    return { chunk: new Uint8Array(0), isEof: true };
+  }
+
   if (!response.ok && response.status !== 206) {
     throw new Error(`Media chunk fetch failed: HTTP ${response.status} ${response.statusText}`);
   }
 
   const ab = await response.arrayBuffer();
-  return new Uint8Array(ab);
+  const chunk = new Uint8Array(ab);
+
+  const contentRange = response.headers.get('content-range') || '';
+  const totalMatch = contentRange.match(/\/(\d+)$/);
+  const totalFileSize = totalMatch ? parseInt(totalMatch[1], 10) : 0;
+  const isEof = (totalFileSize > 0 && (startByte + chunk.length) >= totalFileSize) ||
+                (chunk.length < (endByte - startByte + 1));
+
+  return { chunk, isEof };
 }
 
 /**
- * Downloads media bytes in <=1MB chunks via Cloudflare Edge Relay to prevent YouTube CDN 403 blocks.
+ * Direct full-stream download via Edge Relay.
+ * Used for Instagram, Twitter, and other non-YouTube platforms where files are standalone
+ * and byte-range slicing causes 416 errors.
+ */
+async function fetchDirectMediaStream(
+  directUrl: string,
+  onProgress?: (percent: number) => void
+): Promise<Uint8Array> {
+  const relayUrl = resolveRelayUrl(directUrl);
+  const response = await fetch(relayUrl);
+
+  if (!response.ok) {
+    throw new Error(`Media direct download failed: HTTP ${response.status} ${response.statusText}`);
+  }
+
+  const contentLengthHeader = response.headers.get('content-length');
+  const totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : 0;
+
+  if (!response.body) {
+    const ab = await response.arrayBuffer();
+    if (onProgress) onProgress(100);
+    return new Uint8Array(ab);
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let receivedBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      receivedBytes += value.length;
+      if (onProgress) {
+        if (totalBytes > 0) {
+          onProgress(Math.min(99, Math.round((receivedBytes / totalBytes) * 100)));
+        } else {
+          // Smooth estimation for chunked transfer encoding (approx 3MB typical stream)
+          const estimated = Math.min(95, Math.round(15 + (receivedBytes / (3 * 1024 * 1024)) * 80));
+          onProgress(estimated);
+        }
+      }
+    }
+  }
+
+  const combined = new Uint8Array(receivedBytes);
+  let offset = 0;
+  for (const c of chunks) {
+    combined.set(c, offset);
+    offset += c.length;
+  }
+
+  if (onProgress) onProgress(100);
+  return combined;
+}
+
+/**
+ * Downloads media bytes in <=1MB chunks via Cloudflare Edge Relay for YouTube CDN.
  */
 async function fetchMediaInChunks(
   directUrl: string,
@@ -118,16 +189,21 @@ async function fetchMediaInChunks(
   for (let i = 0; i < totalChunks; i++) {
     const start = i * CHUNK_SIZE;
     const end = Math.min(totalBytesToFetch - 1, (i + 1) * CHUNK_SIZE - 1);
-    const chunk = await fetchStreamChunk(directUrl, start, end);
-    if (!chunk || chunk.length === 0) {
-      if (chunks.length > 0) break;
-      throw new Error(`Media chunk ${i} returned 0 bytes`);
+    const { chunk, isEof } = await fetchStreamChunk(directUrl, start, end);
+    if (chunk.length > 0) {
+      chunks.push(chunk);
+      receivedBytes += chunk.length;
+      if (onProgress) {
+        onProgress(Math.min(99, Math.round((receivedBytes / totalBytesToFetch) * 100)));
+      }
     }
-    chunks.push(chunk);
-    receivedBytes += chunk.length;
-    if (onProgress) {
-      onProgress(Math.min(99, Math.round((receivedBytes / totalBytesToFetch) * 100)));
+    if (isEof) {
+      break;
     }
+  }
+
+  if (receivedBytes === 0) {
+    throw new Error('Media download returned 0 bytes.');
   }
 
   const combined = new Uint8Array(receivedBytes);
@@ -137,6 +213,24 @@ async function fetchMediaInChunks(
     offset += c.length;
   }
   return combined;
+}
+
+/**
+ * Downloads a media stream using the optimal strategy:
+ * - YouTube: <=1MB chunked range requests to bypass GoogleVideo 403 throttling
+ * - Instagram / Twitter / Social Media: Direct full-stream fetch to prevent 416 Range errors
+ */
+async function downloadMediaStream(
+  url: string,
+  bytesNeeded: number,
+  onProgress?: (percent: number) => void
+): Promise<Uint8Array> {
+  const isYouTube = url.includes('googlevideo.com') || url.includes('youtube.com');
+  if (isYouTube) {
+    return await fetchMediaInChunks(url, bytesNeeded, onProgress);
+  }
+  // Direct fast streaming for Instagram, Twitter, and other non-YouTube platforms
+  return await fetchDirectMediaStream(url, onProgress);
 }
 
 /**
@@ -223,7 +317,7 @@ export class ClientFFmpegEngine {
       );
 
       if (onProgress) onProgress('🎵 Streaming audio via Edge Relay...', 20);
-      const audioBytes = await fetchMediaInChunks(sourceUrl, audioBytesNeeded, (pct) => {
+      const audioBytes = await downloadMediaStream(sourceUrl, audioBytesNeeded, (pct) => {
         if (onProgress) onProgress(`🎵 Downloading audio (${pct}%)...`, 20 + Math.round(pct * 0.4));
       });
 
@@ -292,11 +386,11 @@ export class ClientFFmpegEngine {
 
     // Download video and audio concurrently over HTTP/2
     const [videoBytes, audioBytes] = await Promise.all([
-      fetchMediaInChunks(videoUrl, videoBytesNeeded, (pct) => {
+      downloadMediaStream(videoUrl, videoBytesNeeded, (pct) => {
         videoPct = pct;
         updateCombinedProgress();
       }),
-      audioUrl ? fetchMediaInChunks(audioUrl, audioBytesNeeded, (pct) => {
+      audioUrl ? downloadMediaStream(audioUrl, audioBytesNeeded, (pct) => {
         audioPct = pct;
         updateCombinedProgress();
       }) : Promise.resolve(null),
@@ -329,7 +423,8 @@ export class ClientFFmpegEngine {
           '-c:v', 'libx264',
           '-preset', 'ultrafast',
           '-crf', '18',
-          '-c:a', 'copy',
+          '-c:a', 'aac',
+          '-b:a', '192k',
           '-map', '0:v:0',
           '-map', '1:a:0',
           '-avoid_negative_ts', 'make_zero',
@@ -351,6 +446,7 @@ export class ClientFFmpegEngine {
           '-map', '1:a:0',
           '-avoid_negative_ts', 'make_zero',
           '-movflags', '+faststart',
+          '-strict', '-2',
           outName,
         ];
       }
@@ -366,7 +462,8 @@ export class ClientFFmpegEngine {
           '-c:v', 'libx264',
           '-preset', 'ultrafast',
           '-crf', '18',
-          '-c:a', 'copy',
+          '-c:a', 'aac',
+          '-b:a', '192k',
           '-avoid_negative_ts', 'make_zero',
           '-movflags', '+faststart',
           outName,
@@ -380,6 +477,7 @@ export class ClientFFmpegEngine {
           '-c', 'copy',
           '-avoid_negative_ts', 'make_zero',
           '-movflags', '+faststart',
+          '-strict', '-2',
           outName,
         ];
       }
@@ -400,7 +498,8 @@ export class ClientFFmpegEngine {
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-crf', '18',
-        '-c:a', 'copy',
+        '-c:a', 'aac',
+        '-b:a', '192k',
         ...(audioBytes ? ['-map', '0:v:0', '-map', '1:a:0'] : []),
         '-avoid_negative_ts', 'make_zero',
         '-movflags', '+faststart',

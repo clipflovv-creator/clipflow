@@ -82,8 +82,11 @@ export class ClientVideoExportEngine {
     let audioStreamUrl = tracks.audioFormat?.url || (tracks.combinedFormat ? tracks.combinedFormat.url : null);
 
     // If audioStreamUrl points to the exact same file as videoStreamUrl,
-    // the single file already contains both video and audio tracks.
-    if (audioStreamUrl === videoStreamUrl) {
+    // or if the chosen video format already contains embedded audio, no separate audio stream is needed.
+    const videoHasAudio = Boolean(
+      tracks.videoFormat?.acodec && tracks.videoFormat.acodec !== 'none'
+    );
+    if (audioStreamUrl === videoStreamUrl || videoHasAudio) {
       audioStreamUrl = null;
     }
 
