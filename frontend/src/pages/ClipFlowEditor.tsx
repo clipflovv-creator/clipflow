@@ -183,6 +183,7 @@ export default function ClipFlowEditor() {
   // Unified Playback Hook
   const {
     isPlaying,
+    isPlayingRef,
     setIsPlaying,
     currentTime,
     setCurrentTime,
@@ -1017,7 +1018,7 @@ export default function ClipFlowEditor() {
                   setCurrentTime={setCurrentTime}
                   pauseAndSeek={pauseAndSeek}
                   setIsPlaying={setIsPlaying}
-                  isPlayingRef={useRef(isPlaying)}
+                  isPlayingRef={isPlayingRef}
                   videoElementRef={videoElementRef}
                   youtubePlayerRef={youtubePlayerRef}
                 />

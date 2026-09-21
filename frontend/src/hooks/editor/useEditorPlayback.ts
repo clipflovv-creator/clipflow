@@ -306,6 +306,7 @@ export function useEditorPlayback(
 
   return {
     isPlaying,
+    isPlayingRef,
     setIsPlaying,
     currentTime,
     setCurrentTime,
