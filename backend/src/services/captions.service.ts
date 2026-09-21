@@ -66,6 +66,7 @@ export interface TrimmedCaptionResult {
   content: string;
   cueCount: number;
   format: 'srt' | 'vtt' | 'txt';
+  hasSubtitles: boolean;
 }
 
 /**
@@ -355,8 +356,14 @@ export async function fetchAndTrimCaptions(
 
   let rawContent = '';
   if (files.length > 0) {
-    // Priority: clean English human, then English auto dialects, then any English, then any VTT/SRT, then first found
+    const langLower = (lang || '').toLowerCase();
     const matchFile =
+      (langLower && langLower !== 'en' && langLower !== 'auto'
+        ? files.find(f => {
+            const low = f.toLowerCase();
+            return low.includes(`.${langLower}.`) || low.includes(`.${langLower}-`) || low.endsWith(`.${langLower}.vtt`) || low.endsWith(`.${langLower}.srt`);
+          })
+        : null) ||
       files.find(f => f.endsWith('.en.vtt') || f.endsWith('.en.srt')) ||
       files.find(
         f =>
@@ -422,5 +429,6 @@ export async function fetchAndTrimCaptions(
     content: outputContent,
     cueCount: cues.length,
     format: targetFmt,
+    hasSubtitles: rawContent.trim().length > 0,
   };
 }

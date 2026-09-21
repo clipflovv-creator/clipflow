@@ -821,7 +821,7 @@ router.post('/download', async (req: Request, res: Response) => {
           relativeTimecodes,
         });
 
-        if (captionResult.cueCount === 0) {
+        if (!captionResult.hasSubtitles) {
           if (fs.existsSync(captionResult.filePath)) {
             try { fs.unlinkSync(captionResult.filePath); } catch {}
           }
@@ -836,7 +836,10 @@ router.post('/download', async (req: Request, res: Response) => {
           mode: 'server',
           downloadUrl: `/api/video/file/${path.basename(captionResult.filePath)}?name=${encodeURIComponent(finalFileName)}`,
           fileName: finalFileName,
-          message: `Captions trimmed successfully (${captionResult.cueCount} cues)!`,
+          cueCount: captionResult.cueCount,
+          message: captionResult.cueCount > 0
+            ? `Captions trimmed successfully (${captionResult.cueCount} cues)!`
+            : 'Subtitles generated (no speech detected in this timeline range)',
         });
       }
 

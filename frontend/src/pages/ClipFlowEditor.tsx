@@ -810,6 +810,87 @@ export default function ClipFlowEditor() {
       const effectiveTrimEnd = isTrimEnabled ? trimRange[1] : (effectiveDuration || 60);
       const effectiveFormat = downloadFormat === 'captions' ? captionFormat : downloadFormat;
 
+      // 0. Dedicated Subtitle / Caption Export Pipeline (SRT, VTT, TXT)
+      if (downloadFormat === 'captions') {
+        setStatusMessage(`📝 Extracting and trimming ${captionFormat.toUpperCase()} subtitles...`);
+        const res = await fetch(`${BACKEND_URL}/api/video/download`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: activeUrl,
+            format: captionFormat,
+            captionLang: captionLang || 'en',
+            trimStart: effectiveTrimStart,
+            trimEnd: effectiveTrimEnd,
+            customFileName: customFileName || metadata?.title || 'Subtitles',
+            relativeTimecodes: true,
+            mode: 'server',
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to fetch subtitles for this video');
+        }
+
+        const data = await res.json();
+        const fileRes = await fetch(`${BACKEND_URL}${data.downloadUrl}`);
+        if (!fileRes.ok) throw new Error('Failed to retrieve generated subtitle file from server');
+        const blob = await fileRes.blob();
+
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = data.fileName || `${customFileName || metadata?.title || 'Subtitles'}.${captionFormat}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+
+        setDownloadStatus('success');
+        setStatusMessage(`🎉 ${data.message || `Subtitles (${captionFormat.toUpperCase()}) downloaded!`}`);
+
+        if (exportMode === 'pro' && isAuthenticated && isPro) {
+          try {
+            const clientJobId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+            fetch(`${BACKEND_URL}/api/drive/export`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              credentials: 'include',
+              body: JSON.stringify({
+                url: activeUrl,
+                format: captionFormat,
+                captionLang: captionLang || 'en',
+                trimStart: effectiveTrimStart,
+                trimEnd: effectiveTrimEnd,
+                customFileName: customFileName || metadata?.title || 'Subtitles',
+                clientJobId,
+              }),
+            }).catch(() => {});
+          } catch (_) {}
+        }
+
+        setTimeout(() => {
+          setStatusMessage('');
+          setDownloadStatus('idle');
+        }, 3000);
+
+        saveToHistory({
+          title: customFileName || metadata?.title || 'Subtitles',
+          url: activeUrl,
+          thumbnail: metadata?.thumbnail || '',
+          duration: isTrimEnabled
+            ? `${formatTime(trimRange[0])} - ${formatTime(trimRange[1])} (${formatTime(trimRange[1] - trimRange[0])})`
+            : `Full Video (${formatTime(metadata?.duration || 0)})`,
+          quality: captionFormat.toUpperCase(),
+          aspectRatio: 'Captions',
+        });
+        return;
+      }
+
       // 1. Twitch Browser-Side Export Pipeline
       if (isTwitch && twitchHlsUrl && downloadFormat !== 'captions') {
         setStatusMessage('⚡ Initializing browser video engine...');

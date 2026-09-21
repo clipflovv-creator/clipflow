@@ -66,10 +66,7 @@ export default function ClipFlowHome() {
   const [quickTwitchUrl, setQuickTwitchUrl] = useState('');
   const [quickTwitterUrl, setQuickTwitterUrl] = useState('');
   const [showAuthModal, setShowAuthModal] = useState(false);
-  // const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  // const [isClipModalOpen, setIsClipModalOpen] = useState(false);
-  // const [selectedClipUrl, setSelectedClipUrl] = useState('');
 
   // Desktop App email request state
   const [showEngineEmailBox, setShowEngineEmailBox] = useState(false);
@@ -112,7 +109,6 @@ export default function ClipFlowHome() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // setIsVideoModalOpen(false);
         setPreviewImage(null);
       }
     };
@@ -125,19 +121,13 @@ export default function ClipFlowHome() {
   const handleClipClick = (videoUrl: string) => {
     if (!videoUrl.trim()) return;
 
-    // Desktop Helper App is currently on hold: take user directly to Pro mode
+    // Direct to Pro Studio editor
     setStoredProcessingMode('pro');
     window.open(
       `/editor/studio?url=${encodeURIComponent(videoUrl.trim())}&mode=pro&engine=server`,
       '_blank',
       'noopener,noreferrer'
     );
-
-    /* 
-    // ON HOLD: Previously opened Free vs Pro selection modal
-    setSelectedClipUrl(videoUrl.trim());
-    setIsClipModalOpen(true);
-    */
   };
 
   const handleUrlSubmit = (e: React.FormEvent) => {
@@ -936,43 +926,6 @@ export default function ClipFlowHome() {
         onClose={() => setShowAuthModal(false)}
       />
 
-      {/* ── Video Player 80% Pop-up Modal (COMMENTED OUT FOR NOW) ──
-      <AnimatePresence>
-        {isVideoModalOpen && (
-          <div
-            onClick={() => setIsVideoModalOpen(false)}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 bg-black/90 backdrop-blur-2xl animate-in fade-in duration-200"
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.92, y: 10 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-              onClick={(e) => e.stopPropagation()}
-              className="relative w-[86vw] max-w-6xl aspect-video max-h-[82vh] bg-black border border-white/20 rounded-2xl sm:rounded-3xl shadow-[0_0_90px_rgba(168,85,247,0.35)] overflow-hidden flex items-center justify-center"
-            >
-              <button
-                onClick={() => setIsVideoModalOpen(false)}
-                className="absolute top-4 right-4 z-30 p-2.5 rounded-full bg-black/70 hover:bg-white/20 text-white/80 hover:text-white border border-white/20 transition-all shadow-lg hover:scale-105 active:scale-95"
-                title="Close Video"
-              >
-                <X className="w-5 h-5" />
-              </button>
-
-              <video
-                id="clipflow-popup-video"
-                className="w-full h-full object-contain bg-black"
-                controls
-                autoPlay
-                playsInline
-              >
-                Your browser does not support HTML5 video.
-              </video>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-      ── */}
 
       {/* ── Fullscreen Image Preview Modal (Exact Image Size with Attached Close Button) ── */}
       <AnimatePresence>
