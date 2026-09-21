@@ -198,9 +198,20 @@ export default function ClipFlowEditor() {
     );
   }, [platformInfo, activeUrl, metadata]);
 
+  const isInstagram = useMemo(() => {
+    const u = (activeUrl || metadata?.webpage_url || metadata?.url || '').toLowerCase();
+    return Boolean(
+      platformInfo.isInstagram ||
+      u.includes('instagram.com') ||
+      metadata?.extractor_key?.toLowerCase()?.includes('instagram') ||
+      metadata?.extractor?.toLowerCase()?.includes('instagram')
+    );
+  }, [platformInfo, activeUrl, metadata]);
+
   // Player & Timeline
   const youtubePlayerRef = useRef<YouTubePlayer | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const sliderWrapRef = useRef<HTMLDivElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const videoCanvasRef = useRef<HTMLDivElement>(null);
@@ -312,6 +323,10 @@ export default function ClipFlowEditor() {
         videoElementRef.current.volume = clamped;
         videoElementRef.current.muted = clamped === 0;
       }
+      if (audioElementRef.current) {
+        audioElementRef.current.volume = clamped;
+        audioElementRef.current.muted = clamped === 0;
+      }
     }
   };
 
@@ -344,6 +359,10 @@ export default function ClipFlowEditor() {
       if (videoElementRef.current) {
         videoElementRef.current.muted = nextMute;
         videoElementRef.current.volume = targetVol;
+      }
+      if (audioElementRef.current) {
+        audioElementRef.current.muted = nextMute;
+        audioElementRef.current.volume = targetVol;
       }
     }
   };
@@ -472,7 +491,7 @@ export default function ClipFlowEditor() {
     return () => ro.disconnect();
   }, [metadata, videoHeight, sourceAspectRatio, currentContainerAspect]);
 
-  // Compute clean, standard preview qualities and default stream (Priority: 1080p -> 720p -> highest available)
+  // Compute clean, standard preview qualities and default stream (Priority: Combined audio+video -> highest available)
   const { previewQualities, defaultPreviewStreamUrl } = useMemo(() => {
     if (!metadata) return { previewQualities: [], defaultPreviewStreamUrl: '' };
 
@@ -482,8 +501,12 @@ export default function ClipFlowEditor() {
       return Boolean(f.url);
     });
 
+    // Formats with BOTH video AND audio
+    const combinedFormats = videoFormats.filter((f: any) => f.acodec && f.acodec !== 'none');
+
     // 2. Map available heights from video formats (supporting both landscape and portrait)
     const heightToUrlMap = new Map<number, string>();
+    const heightHasAudioMap = new Map<number, boolean>();
     let maxDetectedHeight = 0;
 
     videoFormats.forEach((f: any) => {
@@ -500,8 +523,11 @@ export default function ClipFlowEditor() {
       const standardH = (w > 0 && h > 0) ? Math.min(w, h) : (h || w);
       if (standardH > 0) {
         if (standardH > maxDetectedHeight) maxDetectedHeight = standardH;
-        if (f.url && (!heightToUrlMap.has(standardH) || (f.acodec && f.acodec !== 'none'))) {
+        const hasAudio = Boolean(f.acodec && f.acodec !== 'none');
+        // Prioritize format with audio if duplicate height exists
+        if (f.url && (!heightToUrlMap.has(standardH) || (!heightHasAudioMap.get(standardH) && hasAudio))) {
           heightToUrlMap.set(standardH, f.url);
+          heightHasAudioMap.set(standardH, hasAudio);
         }
       }
     });
@@ -510,18 +536,29 @@ export default function ClipFlowEditor() {
       maxDetectedHeight = 1080;
     }
 
-    // Direct stream fallback prioritizing high definition
+    // Direct stream fallback prioritizing formats with audio
     const bestFallbackUrl =
       metadata.direct_stream_url ||
-      (videoFormats.length > 0
-        ? (videoFormats.filter((f: any) => f.acodec && f.acodec !== 'none').pop()?.url || videoFormats[videoFormats.length - 1]?.url)
-        : '') ||
+      (combinedFormats.length > 0
+        ? combinedFormats[combinedFormats.length - 1]?.url
+        : (videoFormats.length > 0 ? videoFormats[videoFormats.length - 1]?.url : '')) ||
       metadata.url ||
       '';
 
-    // 3. Priority for default stream: 1080p -> 720p -> 1440p/2160p -> bestFallbackUrl
+    // 3. Priority for default stream:
+    // If combined formats (video+audio) exist, prefer them for preview so sound is heard immediately
     let defaultStream = '';
-    if (heightToUrlMap.has(1080)) {
+    const combined1080 = combinedFormats.find((f: any) => (f.height === 1080 || f.width === 1080 || f.resolution?.includes('1080')));
+    const combined720 = combinedFormats.find((f: any) => (f.height === 720 || f.width === 720 || f.resolution?.includes('720')));
+    const combinedAny = combinedFormats.length > 0 ? combinedFormats[combinedFormats.length - 1] : null;
+
+    if (combined1080?.url) {
+      defaultStream = combined1080.url;
+    } else if (combined720?.url) {
+      defaultStream = combined720.url;
+    } else if (combinedAny?.url) {
+      defaultStream = combinedAny.url;
+    } else if (heightToUrlMap.has(1080)) {
       defaultStream = heightToUrlMap.get(1080)!;
     } else if (heightToUrlMap.has(720)) {
       defaultStream = heightToUrlMap.get(720)!;
@@ -561,6 +598,7 @@ export default function ClipFlowEditor() {
       height: t.height,
       url: getBestUrlForTier(t.height),
       isAvailable: heightToUrlMap.has(t.height),
+      hasAudio: heightHasAudioMap.get(t.height) ?? false,
     }));
 
     return {
@@ -650,12 +688,41 @@ export default function ClipFlowEditor() {
   const activeVideoSrc = useMemo(() => {
     if (isTwitch && twitchHlsUrl) return twitchHlsUrl;
     if (!rawPreviewSrc) return '';
-    if (isTwitter || useProxyFallback || rawPreviewSrc.includes('twimg.com')) {
+    if (isTwitter || isInstagram || useProxyFallback || rawPreviewSrc.includes('twimg.com') || rawPreviewSrc.includes('cdninstagram.com') || rawPreviewSrc.includes('instagram.com')) {
       const proxyUrl = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(rawPreviewSrc)}`;
       return proxyUrl;
     }
     return rawPreviewSrc;
-  }, [rawPreviewSrc, isTwitter, useProxyFallback, isTwitch, twitchHlsUrl]);
+  }, [rawPreviewSrc, isTwitter, isInstagram, useProxyFallback, isTwitch, twitchHlsUrl]);
+
+  // Determine if the current active video stream has audio embedded
+  const activeVideoHasAudio = useMemo(() => {
+    if (!metadata || !rawPreviewSrc) return true;
+    const matchingFormat = (metadata.formats || []).find((f: any) => f.url === rawPreviewSrc);
+    if (matchingFormat) {
+      return Boolean(matchingFormat.acodec && matchingFormat.acodec !== 'none');
+    }
+    return true;
+  }, [metadata, rawPreviewSrc]);
+
+  // For streams where the video format has no audio (e.g. DASH video-only), resolve companion audio stream
+  const activeAudioSrc = useMemo(() => {
+    if (activeVideoHasAudio || !metadata || youtubeId) return null;
+
+    // Find the best audio track
+    const audioTrack =
+      (metadata.audio_formats || []).find((f: any) => f.url) ||
+      (metadata.formats || []).find((f: any) => f.url && f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none')) ||
+      (metadata.formats || []).find((f: any) => f.url && f.acodec && f.acodec !== 'none');
+
+    if (!audioTrack?.url) return null;
+
+    let audioUrl = audioTrack.url;
+    if (isTwitter || isInstagram || audioUrl.includes('twimg.com') || audioUrl.includes('cdninstagram.com') || audioUrl.includes('instagram.com') || useProxyFallback) {
+      return `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(audioUrl)}`;
+    }
+    return audioUrl;
+  }, [metadata, activeVideoHasAudio, youtubeId, isInstagram, isTwitter, useProxyFallback]);
 
 
   const hlsRef = useRef<Hls | null>(null);
@@ -806,7 +873,7 @@ export default function ClipFlowEditor() {
         video.load(); // Reset media element state
       }
     }
-  }, [rawPreviewSrc, activeVideoSrc, isHls, isLiveStream, isTwitch, twitchHlsUrl, isTwitter, youtubeId, useProxyFallback]);
+  }, [rawPreviewSrc, activeVideoSrc, isHls, isLiveStream, isTwitch, twitchHlsUrl, isTwitter, isInstagram, youtubeId, useProxyFallback]);
 
 
   // Socket.io ref for cloud download real-time progress
@@ -2130,6 +2197,9 @@ export default function ClipFlowEditor() {
                               setCurrentTime(v.currentTime);
                               pendingSeekTimeRef.current = null;
                               isSeekingRef.current = false;
+                              if (audioElementRef.current && activeAudioSrc) {
+                                audioElementRef.current.currentTime = v.currentTime;
+                              }
                             }}
                             onCanPlay={() => {
                               console.log('%c[ClipFlow 🚀 VIDEO CAN PLAY]', 'color: #22c55e; font-weight: bold;', {
@@ -2157,6 +2227,10 @@ export default function ClipFlowEditor() {
                               const v = e.currentTarget;
                               v.volume = volume;
                               v.muted = isMuted;
+                              if (audioElementRef.current) {
+                                audioElementRef.current.volume = volume;
+                                audioElementRef.current.muted = isMuted;
+                              }
                               if (v.videoWidth > 0 && v.videoHeight > 0) {
                                 setVideoDimensions({ width: v.videoWidth, height: v.videoHeight });
                               }
@@ -2188,25 +2262,49 @@ export default function ClipFlowEditor() {
                               if (v.currentTime >= clipEnd) {
                                 v.currentTime = clipStart;
                                 setCurrentTime(clipStart);
+                                if (audioElementRef.current && activeAudioSrc) {
+                                  audioElementRef.current.currentTime = clipStart;
+                                }
                               } else if (v.currentTime < clipStart - 0.5) {
                                 v.currentTime = clipStart;
                                 setCurrentTime(clipStart);
+                                if (audioElementRef.current && activeAudioSrc) {
+                                  audioElementRef.current.currentTime = clipStart;
+                                }
+                              } else if (audioElementRef.current && activeAudioSrc && !audioElementRef.current.paused) {
+                                // Drift correction: keep audio locked within 250ms of video frames
+                                if (Math.abs(audioElementRef.current.currentTime - v.currentTime) > 0.25) {
+                                  audioElementRef.current.currentTime = v.currentTime;
+                                }
                               }
                             }}
-                            onPlay={() => {
+                            onPlay={(e) => {
+                              const v = e.currentTarget;
                               console.log('%c[ClipFlow ▶️ VIDEO PLAYING]', 'color: #22c55e; font-weight: bold;');
                               setIsPlaying(true);
                               setIsVideoBuffering(false);
+                              if (audioElementRef.current && activeAudioSrc) {
+                                audioElementRef.current.currentTime = v.currentTime;
+                                audioElementRef.current.play().catch(() => {});
+                              }
                             }}
-                            onPlaying={() => {
+                            onPlaying={(e) => {
+                              const v = e.currentTarget;
                               console.log('%c[ClipFlow 🎬 VIDEO PLAYBACK ACTIVE]', 'color: #22c55e;');
                               setIsPlaying(true);
                               setIsVideoBuffering(false);
+                              if (audioElementRef.current && activeAudioSrc && audioElementRef.current.paused) {
+                                audioElementRef.current.currentTime = v.currentTime;
+                                audioElementRef.current.play().catch(() => {});
+                              }
                             }}
                             onPause={() => {
                               console.log('%c[ClipFlow ⏸️ VIDEO PAUSED]', 'color: #f59e0b;');
                               setIsPlaying(false);
                               setIsVideoBuffering(false);
+                              if (audioElementRef.current && activeAudioSrc) {
+                                audioElementRef.current.pause();
+                              }
                             }}
                             onError={(e) => {
                               const v = e.currentTarget;
@@ -2231,8 +2329,25 @@ export default function ClipFlowEditor() {
                                 videoElementRef.current.play().catch(() => {});
                                 setIsPlaying(true);
                               }
+                              if (audioElementRef.current && activeAudioSrc) {
+                                audioElementRef.current.currentTime = trimRange[0];
+                                audioElementRef.current.play().catch(() => {});
+                              }
                             }}
                             className="w-full h-full object-contain pointer-events-none"
+                          />
+                        )}
+
+                        {/* Companion Audio Player for DASH Video-Only streams (e.g. Instagram / WebM / pure video) */}
+                        {activeAudioSrc && (
+                          <audio
+                            ref={audioElementRef}
+                            src={activeAudioSrc}
+                            preload="auto"
+                            muted={isMuted}
+                            onError={(e) => {
+                              console.warn('[ClipFlow Companion Audio Error]', e);
+                            }}
                           />
                         )}
 

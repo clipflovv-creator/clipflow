@@ -179,6 +179,7 @@ router.get('/stream-range', async (req: Request, res: Response) => {
       fetchHeaders['Origin'] = 'https://www.youtube.com';
     } else if (targetUrl.includes('instagram.com') || targetUrl.includes('cdninstagram.com')) {
       fetchHeaders['Referer'] = 'https://www.instagram.com/';
+      fetchHeaders['Origin'] = 'https://www.instagram.com';
     } else if (targetUrl.includes('twimg.com') || targetUrl.includes('twitter.com') || targetUrl.includes('x.com')) {
       fetchHeaders['Referer'] = 'https://twitter.com/';
     } else if (targetUrl.includes('twitch.tv') || targetUrl.includes('ttvnw.net') || targetUrl.includes('cloudfront.net')) {
@@ -514,18 +515,18 @@ router.post('/metadata', async (req: Request, res: Response) => {
 
     // Prioritize formats with BOTH video AND audio so UI preview can play sound
     const audioAndVideoFormats = (metadata.formats || []).filter(
-      (f: any) => f.url && f.acodec !== 'none' && f.vcodec !== 'none' && !f.format_id?.endsWith('v')
-    );
-    const audioFormats = (metadata.formats || []).filter(
-      (f: any) => f.url && f.acodec !== 'none' && !f.format_id?.endsWith('v')
+      (f: any) => f.url && f.acodec && f.acodec !== 'none' && f.vcodec && f.vcodec !== 'none'
     );
     const progressiveMp4 = (metadata.formats || []).filter(
-      (f: any) => f.url && f.vcodec !== 'none' && f.acodec !== 'none'
+      (f: any) => f.url && f.vcodec && f.vcodec !== 'none' && f.acodec && f.acodec !== 'none'
     );
 
-    // Try finding 1080p or 720p format first
+    // Try finding 1080p, 720p, or best available combined format first
     const format1080 = progressiveMp4.find((f: any) => (f.height === 1080 || f.width === 1080 || f.resolution?.includes('1080')));
     const format720 = progressiveMp4.find((f: any) => (f.height === 720 || f.width === 720 || f.resolution?.includes('720')));
+
+    // Only video formats (never pick an audio-only stream as directStreamUrl which is meant for video display)
+    const videoFormats = (metadata.formats || []).filter((f: any) => f.url && f.vcodec && f.vcodec !== 'none');
 
     const directStreamUrl =
       format1080?.url ||
@@ -533,12 +534,8 @@ router.post('/metadata', async (req: Request, res: Response) => {
       (progressiveMp4.length > 0 ? progressiveMp4[progressiveMp4.length - 1].url : undefined) ||
       (audioAndVideoFormats.length > 0 ? audioAndVideoFormats[audioAndVideoFormats.length - 1].url : undefined) ||
       metadata.direct_stream_url ||
-      (audioFormats.length > 0 ? audioFormats[audioFormats.length - 1].url : undefined) ||
       metadata.url ||
-      (metadata.formats && metadata.formats.length > 0
-        ? (metadata.formats.filter((f: any) => f.url && f.vcodec !== 'none').pop()?.url ||
-           metadata.formats[metadata.formats.length - 1]?.url)
-        : undefined);
+      (videoFormats.length > 0 ? videoFormats[videoFormats.length - 1]?.url : undefined);
 
     let parsedDuration = typeof metadata.duration === 'number' && metadata.duration > 0 ? metadata.duration : undefined;
     if (!parsedDuration && metadata.duration_string) {
@@ -624,6 +621,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
           width: f.width,
           fps: f.fps,
           vcodec: f.vcodec,
+          acodec: f.acodec,
           tbr: f.tbr,
           filesize: f.filesize,
           url: f.url,

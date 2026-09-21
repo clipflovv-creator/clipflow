@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import ClipFlowHome from './pages/ClipFlowHome';
 import ClipFlowEditor from './pages/ClipFlowEditor';
-import ClipFlowStudio from './pages/ClipFlowStudio';
 import LoginPage from './pages/LoginPage';
 import LogoutPage from './pages/LogoutPage';
 import CloudStoragePage from './pages/CloudStoragePage';
@@ -58,7 +57,7 @@ function App() {
             <Route path="/clip" element={<ClipFlowEditor />} />
 
             {/* Studio Suite */}
-            <Route path="/studio" element={<ClipFlowStudio />} />
+            <Route path="/studio" element={<ClipFlowEditor />} />
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />

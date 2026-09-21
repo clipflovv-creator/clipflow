@@ -23,7 +23,7 @@ export class InstagramMetadataService {
    * Fetches Instagram video metadata via yt-dlp with appropriate headers
    */
   static async getMetadata(url: string, ytDlpBin: string, retries = 1): Promise<any> {
-    const flags = `--add-header "User-Agent: ${this.USER_AGENT}" --no-warnings --no-check-certificate --dump-json`;
+    const flags = `--add-header "User-Agent: ${this.USER_AGENT}" --add-header "Referer: https://www.instagram.com/" --add-header "Origin: https://www.instagram.com" --no-warnings --no-check-certificate --dump-json`;
 
     let lastErr: any;
     for (let attempt = 0; attempt <= retries; attempt++) {

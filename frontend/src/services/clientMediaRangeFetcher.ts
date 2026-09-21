@@ -169,7 +169,19 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
 
   // Find best matching audio stream (prefer m4a/aac or high bitrate opus)
   const sortedAudio = [...audioOnly].sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
-  const bestAudio = sortedAudio.find((f) => f.ext === 'm4a') || sortedAudio[0] || null;
+  let bestAudio = sortedAudio.find((f) => f.ext === 'm4a') || sortedAudio[0] || null;
+
+  // Robust fallback: Check metadata.audio_formats or any direct format with acodec
+  if (!bestAudio) {
+    const directAudioFormats = (metadata.audio_formats || []).filter(isDirectStream);
+    const sortedAudioMeta = [...directAudioFormats].sort((a: any, b: any) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
+    bestAudio = sortedAudioMeta.find((f: any) => f.ext === 'm4a') || sortedAudioMeta[0] || null;
+  }
+  if (!bestAudio) {
+    const anyAudio = directFormats.filter((f) => f.url && f.acodec && f.acodec !== 'none');
+    const sortedAnyAudio = [...anyAudio].sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
+    bestAudio = sortedAnyAudio[0] || null;
+  }
 
   // Best combined format fallback
   const sortedCombined = [...combined].sort((a, b) => (b.height || 0) - (a.height || 0));
