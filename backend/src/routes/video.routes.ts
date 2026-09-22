@@ -808,7 +808,7 @@ router.post('/download', async (req: Request, res: Response) => {
       // ── Handle Captions Export (SRT, VTT, TXT) ──
       if (format === 'srt' || format === 'vtt' || format === 'txt' || format === 'captions') {
         const targetFmt = format === 'vtt' ? 'vtt' : format === 'txt' ? 'txt' : 'srt';
-        const lang = req.body.captionLang || 'en';
+        const lang = req.body.captionLang || req.body.subtitleLang || 'auto';
         const relativeTimecodes = req.body.relativeTimecodes !== false;
 
         emitProgress('📝 Fetching and trimming captions...', 25);

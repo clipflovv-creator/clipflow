@@ -385,6 +385,7 @@ export function EditorExportPanel({
             setCaptionFormat={setCaptionFormat}
             captionLang={captionLang}
             setCaptionLang={setCaptionLang}
+            availableCaptions={[...(metadata?.subtitles || []), ...(metadata?.automatic_captions || [])]}
             availableQualities={qualityOptions}
             detectedMaxHeight={qualityOptions.length > 0 ? qualityOptions[0].height : undefined}
           />
