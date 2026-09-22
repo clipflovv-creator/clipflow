@@ -9,6 +9,7 @@ export interface IUser extends Document {
   passwordHash: string;
   name: string;
   emailVerified: boolean;
+  welcomeEmailSent?: boolean;
   plan: UserPlan;
   storageLimit: number; // in bytes
   storageUsed: number; // in bytes
@@ -52,6 +53,11 @@ const UserSchema = new Schema<IUser>(
       },
     },
     emailVerified: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    welcomeEmailSent: {
       type: Boolean,
       default: false,
       index: true,
