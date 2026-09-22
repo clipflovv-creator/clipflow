@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { HardDrive } from 'lucide-react';
 
 interface EditorHeaderProps {
@@ -18,11 +17,10 @@ export function EditorHeader({
     <header className="h-[54px] flex items-center justify-between px-4 border-b border-white/[0.06] bg-black/90 backdrop-blur-xl shrink-0 gap-4">
       <div className="flex items-center gap-3 min-w-0">
         {isLoadingMeta && (
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-            className="w-4 h-4 border-2 border-blue-500/30 border-t-blue-400 rounded-full shrink-0"
-          />
+          <div className="flex items-center gap-2.5 animate-pulse min-w-0">
+            <div className="w-20 h-5 rounded-md bg-white/[0.08] shrink-0" />
+            <div className="w-48 sm:w-72 md:w-96 h-4 rounded-md bg-white/[0.06] shrink-0" />
+          </div>
         )}
 
         {metadata && (

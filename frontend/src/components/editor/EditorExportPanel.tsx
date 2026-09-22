@@ -123,7 +123,7 @@ export function EditorExportPanel({
       {/* Scrollable settings */}
       <div className="flex-1 overflow-y-auto">
         {/* Video Info Header / Image Preview Section */}
-        {metadata && (
+        {metadata ? (
           <div className="flex flex-col gap-2.5 px-4 py-4 border-b border-white/[0.06] bg-black">
             <div className="flex items-center justify-between">
               {/* Dropdown Menu */}
@@ -244,6 +244,16 @@ export function EditorExportPanel({
                 </p>
               </div>
             )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2.5 px-4 py-4 border-b border-white/[0.06] bg-black animate-pulse">
+            <div className="flex items-center justify-between">
+              <div className="w-24 h-4 rounded bg-white/[0.08]" />
+              <div className="w-16 h-6 rounded bg-white/[0.06]" />
+            </div>
+            <div className="relative w-full aspect-video rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center">
+              <ImageIcon className="w-5 h-5 text-white/20" />
+            </div>
           </div>
         )}
 

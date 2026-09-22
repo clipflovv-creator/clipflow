@@ -31,6 +31,7 @@ import {
   EditorPlaybackControls,
   EditorTimeline,
   EditorExportPanel,
+  EditorPlayerSkeleton,
 } from '../components/editor';
 import { useEditorMetadata } from '../hooks/editor/useEditorMetadata';
 import { useEditorPlayback } from '../hooks/editor/useEditorPlayback';
@@ -1141,14 +1142,10 @@ export default function ClipFlowEditor() {
         <div className="flex-1 flex overflow-hidden min-h-0">
           <main className="flex-1 flex flex-col overflow-y-auto min-w-0 p-4 gap-0">
             {isLoadingMeta && (
-              <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center min-h-[300px]">
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-                  className="w-10 h-10 border-3 border-blue-500/20 border-t-blue-400 rounded-full"
-                />
-                <p className="text-sm text-gray-400 font-medium">Extracting video streams...</p>
-              </div>
+              <EditorPlayerSkeleton
+                videoHeight={videoHeight}
+                platform={platformInfo.platform}
+              />
             )}
 
             {errorMeta && !isLoadingMeta && (
