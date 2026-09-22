@@ -83,6 +83,36 @@ async function loadFFmpeg() {
 }
 
 /**
+ * Computes exact pixel dimensions for requested aspect ratio and target quality.
+ */
+function computeTargetDimensions(
+  aspectRatio: string = '16:9',
+  quality: string = '1080p'
+): { width: number; height: number } {
+  const cleanQ = parseInt(quality.replace(/[^\d]/g, ''), 10) || 1080;
+
+  if (aspectRatio === '9:16') {
+    // 9:16 Vertical (Shorts / Reels / TikTok): width matches resolution standard (e.g. 1080x1920, 720x1280)
+    const w = cleanQ;
+    const h = Math.round((cleanQ * 16) / 9 / 2) * 2;
+    return { width: w, height: h };
+  } else if (aspectRatio === '1:1') {
+    // 1:1 Square
+    return { width: cleanQ, height: cleanQ };
+  } else if (aspectRatio === '4:5') {
+    // 4:5 Portrait
+    const w = cleanQ;
+    const h = Math.round((cleanQ * 5) / 4 / 2) * 2;
+    return { width: w, height: h };
+  } else {
+    // 16:9 Landscape standard
+    const h = cleanQ;
+    const w = Math.round((cleanQ * 16) / 9 / 2) * 2;
+    return { width: w, height: h };
+  }
+}
+
+/**
  * Generates the FFmpeg video filter for cropping, aspect ratio padding, and resolution scaling.
  */
 function buildVideoFilter(
@@ -136,12 +166,11 @@ function buildVideoFilter(
     }
   }
 
-  // 3. Target Quality Downscaling (e.g. 720p, 480p, 360p)
-  if (quality && quality !== '1080p' && quality !== 'source' && quality !== 'best') {
-    const targetHeight = parseInt(quality.replace(/[^\d]/g, ''), 10);
-    if (!isNaN(targetHeight) && targetHeight < 1080 && targetHeight > 0) {
-      filters.push(`scale=-2:${targetHeight}`);
-    }
+  // 3. Exact Target Quality Scaling (ensures output pixel dimensions match user selection)
+  const isNatural16x9 = !aspectRatio || aspectRatio === '16:9' || aspectRatio === 'original';
+  if (quality && quality !== 'source' && quality !== 'best' && quality !== 'original' && (!isNatural16x9 || filters.length > 0)) {
+    const target = computeTargetDimensions(aspectRatio, quality);
+    filters.push(`scale=${target.width}:${target.height}`);
   }
 
   return filters.join(',');

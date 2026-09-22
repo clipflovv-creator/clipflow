@@ -169,7 +169,28 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
 
   const formats: any[] = metadata.formats || [];
   const cleanQ = targetQuality.toLowerCase().replace('p', '');
-  const targetHeight = parseInt(cleanQ, 10) || 1080;
+  const isOriginal = cleanQ === 'original' || cleanQ === 'source' || cleanQ === 'best' || cleanQ === 'max';
+  const targetHeight = isOriginal ? 99999 : (parseInt(cleanQ, 10) || 1080);
+
+  const getFormatHeight = (f: any): number => {
+    if (typeof f?.height === 'number' && f.height > 0) return f.height;
+    if (typeof f?.width === 'number' && f.width > 0 && typeof f?.height === 'number' && f.height > 0) {
+      return Math.min(f.width, f.height);
+    }
+    if (f?.resolution) {
+      const m = f.resolution.match(/(\d+)x(\d+)/);
+      if (m) {
+        const w = parseInt(m[1], 10);
+        const h = parseInt(m[2], 10);
+        return (w > 0 && h > 0) ? Math.min(w, h) : (h || w);
+      }
+    }
+    if (typeof f?.format_note === 'string') {
+      const m = f.format_note.match(/(\d+)p/i);
+      if (m) return parseInt(m[1], 10);
+    }
+    return 0;
+  };
 
   // 1. Filter only direct streams (no HLS m3u8 playlists)
   const directFormats = formats.filter(isDirectStream);
@@ -194,23 +215,26 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
 
   // Find best matching video stream:
   // 1st priority: Exact height and H.264 MP4
-  let bestVideo = videoOnly.find((f) => f.height === targetHeight && isAvcMp4(f));
+  let bestVideo = videoOnly.find((f) => getFormatHeight(f) === targetHeight && isAvcMp4(f));
   // 2nd priority: Exact height any container
   if (!bestVideo) {
-    bestVideo = videoOnly.find((f) => f.height === targetHeight);
+    bestVideo = videoOnly.find((f) => getFormatHeight(f) === targetHeight);
   }
   // 3rd priority: Closest height <= targetHeight (preferring MP4)
-  if (!bestVideo) {
-    const sorted = [...videoOnly].sort((a, b) => (b.height || 0) - (a.height || 0));
-    bestVideo = sorted.find((f) => (f.height || 0) <= targetHeight && isAvcMp4(f)) ||
-                sorted.find((f) => (f.height || 0) <= targetHeight) ||
+  if (!bestVideo && videoOnly.length > 0) {
+    const sorted = [...videoOnly].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+    bestVideo = sorted.find((f) => getFormatHeight(f) <= targetHeight && isAvcMp4(f)) ||
+                sorted.find((f) => getFormatHeight(f) <= targetHeight) ||
                 sorted[0] || null;
   }
-  // Fallback to combined if no separate video
-  if (!bestVideo) {
-    bestVideo = combined.find((f) => f.height === targetHeight && isAvcMp4(f)) ||
-                combined.find((f) => f.height === targetHeight) ||
-                combined[0] || null;
+  // Fallback to combined if no separate video (Twitter, Instagram, etc.)
+  if (!bestVideo && combined.length > 0) {
+    const sortedCombined = [...combined].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+    bestVideo = sortedCombined.find((f) => getFormatHeight(f) === targetHeight && isAvcMp4(f)) ||
+                sortedCombined.find((f) => getFormatHeight(f) === targetHeight) ||
+                sortedCombined.find((f) => getFormatHeight(f) <= targetHeight && isAvcMp4(f)) ||
+                sortedCombined.find((f) => getFormatHeight(f) <= targetHeight) ||
+                sortedCombined[0] || null;
   }
 
   // Find best matching audio stream (strongly prioritize original/default audio over dubs & prefer M4A / AAC)
@@ -231,9 +255,10 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
   }
 
   // Best combined format fallback
-  const sortedCombined = [...combined].sort((a, b) => (b.height || 0) - (a.height || 0));
-  const bestCombined = sortedCombined.find((f) => f.height === targetHeight && isAvcMp4(f)) ||
-                       sortedCombined.find((f) => f.height === targetHeight) ||
+  const sortedCombined = [...combined].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+  const bestCombined = sortedCombined.find((f) => getFormatHeight(f) === targetHeight && isAvcMp4(f)) ||
+                       sortedCombined.find((f) => getFormatHeight(f) === targetHeight) ||
+                       sortedCombined.find((f) => getFormatHeight(f) <= targetHeight) ||
                        sortedCombined[0] || null;
 
   return {

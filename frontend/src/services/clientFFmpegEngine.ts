@@ -22,6 +22,7 @@ export interface FFmpegClipOptions {
   cropPosition?: 'center' | 'left' | 'right';
   cropBox?: { x: number; y: number; width: number; height: number };
   duration?: number;
+  videoHeight?: number;
   videoFileSize?: number;
   audioFileSize?: number;
   videoBitrate?: number;
@@ -282,6 +283,36 @@ async function fetchSmartMediaStream(
 }
 
 /**
+ * Computes exact pixel dimensions for requested aspect ratio and target quality (e.g. 1080p, 720p, 480p, 360p).
+ */
+export function computeTargetDimensions(
+  aspectRatio: string = '16:9',
+  quality: string = '1080p'
+): { width: number; height: number } {
+  const cleanQ = parseInt(quality.replace(/[^\d]/g, ''), 10) || 1080;
+
+  if (aspectRatio === '9:16') {
+    // 9:16 Vertical (Shorts / Reels / TikTok): width matches resolution standard (e.g. 1080x1920, 720x1280)
+    const w = cleanQ;
+    const h = Math.round((cleanQ * 16) / 9 / 2) * 2;
+    return { width: w, height: h };
+  } else if (aspectRatio === '1:1') {
+    // 1:1 Square (Feed posts): width = height
+    return { width: cleanQ, height: cleanQ };
+  } else if (aspectRatio === '4:5') {
+    // 4:5 Portrait: width matches cleanQ, height is cleanQ * 5/4
+    const w = cleanQ;
+    const h = Math.round((cleanQ * 5) / 4 / 2) * 2;
+    return { width: w, height: h };
+  } else {
+    // 16:9 Landscape standard: height matches cleanQ (e.g. 1920x1080, 1280x720, 854x480, 640x360)
+    const h = cleanQ;
+    const w = Math.round((cleanQ * 16) / 9 / 2) * 2;
+    return { width: w, height: h };
+  }
+}
+
+/**
  * Computes FFmpeg video filter for target aspect ratio, fit/pad mode, crop position, and quality scaling.
  */
 function buildVideoFilter(
@@ -289,7 +320,8 @@ function buildVideoFilter(
   fitMode: 'crop' | 'pad' = 'pad',
   cropPosition: 'center' | 'left' | 'right' = 'center',
   cropBox?: { x: number; y: number; width: number; height: number },
-  quality?: string
+  quality?: string,
+  sourceHeight?: number
 ): string | null {
   const filters: string[] = [];
 
@@ -343,11 +375,19 @@ function buildVideoFilter(
     }
   }
 
-  // 3. Target Quality Downscaling (e.g. 720p, 480p, 360p)
-  if (quality && quality !== '1080p' && quality !== 'source' && quality !== 'best') {
-    const targetHeight = parseInt(quality.replace(/[^\d]/g, ''), 10);
-    if (!isNaN(targetHeight) && targetHeight < 1080 && targetHeight > 0) {
-      filters.push(`scale=-2:${targetHeight}`);
+  // 3. Exact Target Quality Scaling (ensures output pixel dimensions match user selection)
+  if (quality && quality !== 'source' && quality !== 'best' && quality !== 'original') {
+    const target = computeTargetDimensions(aspectRatio, quality);
+    const isNatural16x9 = !aspectRatio || aspectRatio === '16:9' || aspectRatio === 'original';
+    // If standard 16:9 video with no cropping, and input stream is already exact target height, skip scaling for lossless stream copy.
+    // Also skip scaling if source height <= target height to prevent ugly upscaling & slow CPU transcode.
+    const alreadyMatches = isNatural16x9 && filters.length === 0 && (
+      !sourceHeight ||
+      sourceHeight === target.height ||
+      sourceHeight <= target.height
+    );
+    if (!alreadyMatches) {
+      filters.push(`scale=${target.width}:${target.height}`);
     }
   }
 
@@ -370,6 +410,7 @@ export class ClientFFmpegEngine {
       fitMode = 'pad',
       cropPosition = 'center',
       cropBox,
+      videoHeight,
       onProgress,
     } = options;
 
@@ -465,7 +506,7 @@ export class ClientFFmpegEngine {
       await ffmpeg.writeFile('input_a.m4a', audioSlice.bytes);
     }
 
-    const videoFilter = buildVideoFilter(aspectRatio, fitMode, cropPosition, cropBox, quality);
+    const videoFilter = buildVideoFilter(aspectRatio, fitMode, cropPosition, cropBox, quality, videoHeight);
     const outName = 'output.mp4';
     try { await ffmpeg.deleteFile(outName); } catch {}
 
@@ -486,7 +527,7 @@ export class ClientFFmpegEngine {
         '-c:v', 'copy',
         '-c:a', 'aac',
         '-b:a', '192k',
-        ...(audioSlice ? ['-map', '0:v:0', '-map', '1:a:0'] : []),
+        ...(audioSlice ? ['-map', '0:v:0', '-map', '1:a:0'] : ['-map', '0:v:0', '-map', '0:a:0?']),
         '-avoid_negative_ts', 'make_zero',
         '-movflags', '+faststart',
         outName,

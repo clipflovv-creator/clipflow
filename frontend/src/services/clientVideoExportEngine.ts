@@ -139,6 +139,7 @@ export class ClientVideoExportEngine {
       cropPosition,
       cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
       duration: totalDuration,
+      videoHeight: tracks.videoFormat?.height || tracks.combinedFormat?.height || currentMetadata?.height || (currentMetadata?.video_formats?.[0]?.height),
       videoFileSize: tracks.videoFormat?.filesize,
       audioFileSize: tracks.audioFormat?.filesize,
       videoBitrate: tracks.videoFormat?.tbr || tracks.videoFormat?.vbr,

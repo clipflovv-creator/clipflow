@@ -70,18 +70,20 @@ export class YouTubeMetadataService {
     const cookieArg = cookiesFile ? `--cookies "${cookiesFile}" ` : '';
     const bypassFlags = getBypassFlags();
 
-    // Multiple client spoofing strategies for cloud hosting environments.
-    // If YTDLP_PROXY is set, these work reliably. Without a proxy, datacenter IPs
-    // (Render, Vercel, AWS) are hard-blocked by YouTube regardless of client type.
+    // Client strategies: Default visionos/web returns full 1080p/720p/480p DASH formats with direct URLs.
+    // Fallback to mobile clients only if cloud datacenter IP blocks the primary visionos extractor.
     const clientStrategies = [
-      '--extractor-args "youtube:player_client=android,ios,mweb"',
-      '--extractor-args "youtube:player_client=ios,tv,mweb"',
-      '--extractor-args "youtube:player_client=android"',
       '',
+      '--extractor-args "youtube:player_client=visionos"',
+      '--extractor-args "youtube:player_client=visionos,android"',
+      '--extractor-args "youtube:player_client=android,ios,mweb"',
+      '--extractor-args "youtube:player_client=android"',
     ];
 
     let lastErr: any;
-    for (let attempt = 0; attempt < clientStrategies.length && attempt <= retries; attempt++) {
+    let lowResFallback: any = null;
+
+    for (let attempt = 0; attempt < clientStrategies.length && attempt <= retries + 2; attempt++) {
       const clientArg = clientStrategies[attempt];
       const flags = `--js-runtimes node ${clientArg} ${bypassFlags} ${cookieArg}--no-warnings --no-check-certificate --no-playlist --dump-json`;
 
@@ -90,7 +92,21 @@ export class YouTubeMetadataService {
           `"${ytDlpBin}" ${flags} "${url}"`,
           { maxBuffer: 1024 * 1024 * 100 }
         );
-        return JSON.parse(stdout);
+        const parsed = JSON.parse(stdout);
+        const videoFormats = (parsed.formats || []).filter(
+          (f: any) => f.url && f.vcodec && f.vcodec !== 'none'
+        );
+        const hasHd = videoFormats.some((f: any) => (f.height || 0) >= 720);
+
+        // If strategy returned full HD formats (or 3+ diverse video streams), return immediately
+        if (hasHd || videoFormats.length >= 3) {
+          return parsed;
+        }
+
+        // If it only got low-res (e.g. format 18 360p), save as fallback and test if next strategy yields HD
+        if (!lowResFallback && parsed) {
+          lowResFallback = parsed;
+        }
       } catch (err: any) {
         lastErr = err;
         const msg = (err?.message || String(err)).toLowerCase();
@@ -99,9 +115,10 @@ export class YouTubeMetadataService {
           await new Promise((r) => setTimeout(r, 800));
           continue;
         }
-        break;
       }
     }
+
+    if (lowResFallback) return lowResFallback;
     throw lastErr;
   }
 }
