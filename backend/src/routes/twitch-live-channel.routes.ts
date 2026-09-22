@@ -10,19 +10,7 @@ import { cleanUnicodeFileName, getSafeContentDisposition } from '../utils/i18n-f
 
 const router = express.Router();
 
-function resolveYtDlpBinary(): string {
-  const candidates = [
-    path.join(process.cwd(), 'backend', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'yt-dlp.exe'),
-    path.join(process.cwd(), 'backend', 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'qt-app', 'bin', 'yt-dlp.exe'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'yt-dlp';
-}
+import { resolveYtDlpBinary } from '../utils/binary-resolver.util.js';
 
 const YTDLP_BIN = resolveYtDlpBinary();
 
@@ -71,12 +59,22 @@ router.get('/stream-info', async (req: Request, res: Response) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     // No HTTP cache when forceRefresh; otherwise 15 min
     res.setHeader('Cache-Control', forceRefresh ? 'no-cache, no-store' : 'public, max-age=900');
+
+    const mappedQualities = (result.qualities || []).map((q) => ({
+      ...q,
+      proxiedUrl: q.url && q.url.includes('.m3u8')
+        ? `${host}/api/video/hls-proxy?url=${encodeURIComponent(q.url)}`
+        : q.url,
+    }));
+
     return res.json({
       streamUrl: hlsUrl,
       rawStreamUrl: result.streamUrl,
       sourceType: result.sourceType,
       vodId: result.vodId,
       channel: result.channel,
+      masterPlaylistUrl: result.masterPlaylistUrl,
+      qualities: mappedQualities,
     });
   } catch (err: any) {
     console.error('[Twitch Stream Info Error]', err.message);

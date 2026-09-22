@@ -531,7 +531,30 @@ export async function fetchSidxSlice(
 ): Promise<SmartSliceResult | null> {
   try {
     // 1. Fetch initial 16 KB header to check for sidx
-    const headerBytes = new Uint8Array(await fetchByteRange(streamUrl, 0, 16383));
+    let headerBytes = new Uint8Array(await fetchByteRange(streamUrl, 0, 16383));
+
+    // Dynamic header inspection: check if sidx box needs a larger range (up to 128 KB for 1-3 hr videos)
+    let sidxBoxStart = -1;
+    let sidxSize = 0;
+    const view = new DataView(headerBytes.buffer, headerBytes.byteOffset, headerBytes.byteLength);
+    for (let i = 0; i <= headerBytes.length - 8; i++) {
+      if (
+        headerBytes[i + 4] === 0x73 &&
+        headerBytes[i + 5] === 0x69 &&
+        headerBytes[i + 6] === 0x64 &&
+        headerBytes[i + 7] === 0x78
+      ) {
+        sidxBoxStart = i;
+        sidxSize = view.getUint32(i, false);
+        break;
+      }
+    }
+
+    if (sidxBoxStart >= 0 && sidxSize > 0 && (sidxBoxStart + sidxSize) > headerBytes.length) {
+      const fullHeaderSize = Math.min(131072, sidxBoxStart + sidxSize + 32);
+      headerBytes = new Uint8Array(await fetchByteRange(streamUrl, 0, fullHeaderSize - 1));
+    }
+
     const parsed = parseSidxBox(headerBytes);
     if (!parsed || parsed.segments.length === 0) {
       return null;

@@ -125,6 +125,32 @@ export async function parseHlsManifest(
     return await parseHlsManifest(targetVariantUrl, quality);
   }
 
+  // If this is a chunked variant but a lower tier or audio_only was requested,
+  // check if a quality-specific sibling variant exists on CloudFront
+  if (quality && quality !== 'source' && quality !== 'best' && quality !== '1080p') {
+    let candidatePath = '';
+    if (quality === 'audio_only') {
+      candidatePath = targetManifestUrl.replace(/\/chunked\//, '/audio_only/');
+    } else {
+      const cleanNum = quality.replace(/[^\d]/g, '');
+      if (cleanNum && targetManifestUrl.includes('/chunked/')) {
+        candidatePath = targetManifestUrl.replace(/\/chunked\//, `/${cleanNum}p60/`);
+      }
+    }
+
+    if (candidatePath && candidatePath !== targetManifestUrl) {
+      try {
+        const probeRes = await fetch(candidatePath, { method: 'HEAD' });
+        if (probeRes.ok) {
+          console.log(`[HLS Segment Fetcher ⚡] Switched to quality-matched variant: ${candidatePath}`);
+          return await parseHlsManifest(candidatePath);
+        }
+      } catch {
+        // Fall back to current playlist
+      }
+    }
+  }
+
   // Parse media playlist segments & initialization map (fMP4 / CMAF)
   const segments: HlsSegment[] = [];
   let initSegmentUrl: string | undefined;

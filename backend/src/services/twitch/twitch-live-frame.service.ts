@@ -24,34 +24,7 @@ import { TwitchStreamResolverService } from './twitch-stream-resolver.service.js
 
 const execAsync = util.promisify(exec);
 
-function resolveYtDlpBinary(): string {
-  const candidates = [
-    path.join(process.cwd(), 'backend', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'yt-dlp.exe'),
-    path.join(process.cwd(), 'backend', 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'qt-app', 'bin', 'yt-dlp.exe'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'yt-dlp';
-}
-
-function resolveFFmpegBinary(): string {
-  const localAppData = process.env.LOCALAPPDATA || '';
-  const candidates = [
-    path.join(process.cwd(), 'backend', 'ffmpeg.exe'),
-    path.join(process.cwd(), 'ffmpeg.exe'),
-    path.join(process.cwd(), 'qt-app', 'bin', 'ffmpeg.exe'),
-    path.join(localAppData, 'Programs', 'ClipFlow', 'bin', 'ffmpeg.exe'),
-    path.join(localAppData, 'ClipFlow', 'bin', 'ffmpeg.exe'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'ffmpeg';
-}
+import { resolveYtDlpBinary, resolveFFmpegBinary } from '../../utils/binary-resolver.util.js';
 
 function resolveTempDir(): string {
   const candidates = [

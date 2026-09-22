@@ -18,11 +18,23 @@ const execAsync = promisify(exec);
 // ─── Twitch Client ID (Public, same one browsers use) ────────────────────────
 const TWITCH_CLIENT_ID = 'kimne78kx3ncx6brgo4mv6wki5h1ko';
 
+export interface StreamQualityOption {
+  id: string;
+  label: string;
+  height: number;
+  width?: number;
+  bandwidth: number;
+  fps?: number;
+  url: string;
+}
+
 export interface StreamResolutionResult {
   streamUrl: string;
   sourceType: 'dvr' | 'live' | 'vod' | 'clip';
   vodId?: string;
   channel?: string;
+  masterPlaylistUrl?: string;
+  qualities?: StreamQualityOption[];
 }
 
 interface CacheEntry {
@@ -93,24 +105,57 @@ async function getPlaybackAccessToken(
 }
 
 /**
- * Picks the best-quality variant URL from an M3U8 master playlist text.
- * Filters by quality height if provided.
+ * Picks the best-quality variant URL and extracts all variant stream options
+ * from an M3U8 master playlist text, correctly resolving relative URLs.
  */
-function selectBestVariantUrl(m3u8: string, quality?: string): string | null {
+function selectBestVariantUrl(
+  m3u8: string,
+  baseUrl: string,
+  quality?: string
+): { bestUrl: string; qualities: StreamQualityOption[] } | null {
   const lines = m3u8.split('\n');
-  const streams: Array<{ bandwidth: number; height: number; url: string }> = [];
+  const streams: StreamQualityOption[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (line.startsWith('#EXT-X-STREAM-INF:')) {
-      const bwMatch = line.match(/BANDWIDTH=(\d+)/);
-      const resMatch = line.match(/RESOLUTION=\d+x(\d+)/);
+      const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+      const resMatch = line.match(/RESOLUTION=(\d+)x(\d+)/i);
+      const fpsMatch = line.match(/FRAME-RATE=([\d.]+)/i);
+      const videoMatch = line.match(/VIDEO="([^"]+)"/i);
       const urlLine = lines[i + 1]?.trim();
-      if (urlLine && urlLine.startsWith('http')) {
+
+      if (urlLine && !urlLine.startsWith('#')) {
+        let fullUrl = urlLine;
+        try {
+          fullUrl = new URL(urlLine, baseUrl).toString();
+        } catch {
+          fullUrl = urlLine;
+        }
+
+        const width = resMatch ? parseInt(resMatch[1], 10) : undefined;
+        const height = resMatch ? parseInt(resMatch[2], 10) : 0;
+        const bandwidth = bwMatch ? parseInt(bwMatch[1], 10) : 0;
+        const fps = fpsMatch ? Math.round(parseFloat(fpsMatch[1])) : undefined;
+        const videoTag = videoMatch ? videoMatch[1] : '';
+
+        let id = height > 0 ? `${height}p` : 'audio_only';
+        if (fps && fps >= 50 && height > 0) {
+          id = `${height}p${fps}`;
+        }
+        let label = height > 0 ? (fps ? `${height}p${fps}` : `${height}p`) : 'Audio Only';
+        if (videoTag === 'chunked' || height >= 1080) {
+          label = `${label} (Source)`;
+        }
+
         streams.push({
-          bandwidth: bwMatch ? parseInt(bwMatch[1], 10) : 0,
-          height: resMatch ? parseInt(resMatch[1], 10) : 0,
-          url: urlLine,
+          id,
+          label,
+          height,
+          width,
+          fps,
+          bandwidth,
+          url: fullUrl,
         });
       }
     }
@@ -119,21 +164,25 @@ function selectBestVariantUrl(m3u8: string, quality?: string): string | null {
   if (streams.length === 0) return null;
   streams.sort((a, b) => b.bandwidth - a.bandwidth);
 
+  let bestUrl = streams[0].url;
   if (quality && quality !== 'best' && quality !== 'source') {
-    const targetHeight = parseInt(quality.replace('p', ''), 10);
+    const targetHeight = parseInt(quality.replace(/[^\d]/g, ''), 10);
     if (!isNaN(targetHeight)) {
       const match = streams.find((s) => s.height <= targetHeight);
-      if (match) return match.url;
+      if (match) bestUrl = match.url;
     }
   }
 
-  return streams[0].url;
+  return { bestUrl, qualities: streams };
 }
 
 /**
  * Resolves a live channel HLS URL via Twitch Usher API.
  */
-async function resolveChannelHls(channelName: string, quality?: string): Promise<string | null> {
+async function resolveChannelHls(
+  channelName: string,
+  quality?: string
+): Promise<{ streamUrl: string; qualities: StreamQualityOption[]; masterPlaylistUrl: string } | null> {
   const tokenData = await getPlaybackAccessToken(channelName.toLowerCase(), false);
   if (!tokenData) return null;
 
@@ -172,13 +221,20 @@ async function resolveChannelHls(channelName: string, quality?: string): Promise
     }
 
     const m3u8Text = await res.text();
-    const bestUrl = selectBestVariantUrl(m3u8Text, quality);
-    if (bestUrl) {
-      console.log(`[Twitch Usher] ✅ Resolved live HLS for ${channelName}: ${bestUrl.substring(0, 80)}...`);
-      return bestUrl;
+    const parsed = selectBestVariantUrl(m3u8Text, usherUrl, quality);
+    if (parsed) {
+      console.log(`[Twitch Usher] ✅ Resolved live HLS for ${channelName}: ${parsed.bestUrl.substring(0, 80)}...`);
+      return {
+        streamUrl: parsed.bestUrl,
+        qualities: parsed.qualities,
+        masterPlaylistUrl: usherUrl,
+      };
     }
-    // Return the master playlist URL as fallback
-    return usherUrl;
+    return {
+      streamUrl: usherUrl,
+      qualities: [],
+      masterPlaylistUrl: usherUrl,
+    };
   } catch (err: any) {
     console.warn('[Twitch Usher] ❌ Failed to fetch live channel playlist:', err.message);
     return null;
@@ -188,7 +244,10 @@ async function resolveChannelHls(channelName: string, quality?: string): Promise
 /**
  * Resolves a VOD/DVR VOD HLS URL via Twitch Usher API.
  */
-async function resolveVodHls(vodId: string, quality?: string): Promise<string | null> {
+async function resolveVodHls(
+  vodId: string,
+  quality?: string
+): Promise<{ streamUrl: string; qualities: StreamQualityOption[]; masterPlaylistUrl: string } | null> {
   const tokenData = await getPlaybackAccessToken(vodId, true);
   if (!tokenData) return null;
 
@@ -222,12 +281,20 @@ async function resolveVodHls(vodId: string, quality?: string): Promise<string | 
     }
 
     const m3u8Text = await res.text();
-    const bestUrl = selectBestVariantUrl(m3u8Text, quality);
-    if (bestUrl) {
-      console.log(`[Twitch Usher] ✅ Resolved VOD HLS for ${vodId}: ${bestUrl.substring(0, 80)}...`);
-      return bestUrl;
+    const parsed = selectBestVariantUrl(m3u8Text, usherUrl, quality);
+    if (parsed) {
+      console.log(`[Twitch Usher] ✅ Resolved VOD HLS for ${vodId}: ${parsed.bestUrl.substring(0, 80)}...`);
+      return {
+        streamUrl: parsed.bestUrl,
+        qualities: parsed.qualities,
+        masterPlaylistUrl: usherUrl,
+      };
     }
-    return usherUrl;
+    return {
+      streamUrl: usherUrl,
+      qualities: [],
+      masterPlaylistUrl: usherUrl,
+    };
   } catch (err: any) {
     console.warn('[Twitch Usher] ❌ Failed to fetch VOD playlist:', err.message);
     return null;
@@ -235,10 +302,14 @@ async function resolveVodHls(vodId: string, quality?: string): Promise<string | 
 }
 
 /**
- * Resolves direct HLS playlist from Twitch CloudFront CDN using VOD metadata.
+ * Resolves direct multi-quality HLS playlists from Twitch CloudFront CDN using VOD metadata.
+ * Probes available quality tiers in parallel and returns both target stream and available tiers.
  * Bypasses Usher and yt-dlp completely for 100% reliable, instant playback.
  */
-async function resolveCloudFrontDvrFromNode(node: any, quality?: string): Promise<string | null> {
+async function resolveCloudFrontDvrFromNode(
+  node: any,
+  quality?: string
+): Promise<{ streamUrl: string; qualities: StreamQualityOption[] } | null> {
   if (!node) return null;
   let baseDomain = '';
   let basePath = '';
@@ -261,39 +332,149 @@ async function resolveCloudFrontDvrFromNode(node: any, quality?: string): Promis
 
   if (!baseDomain || !basePath) return null;
 
-  // Build candidate paths in order of preference
-  const candidates: string[] = [];
-  if (quality && quality !== 'best' && quality !== 'source' && quality !== '1080p') {
-    const cleanQ = quality.toLowerCase().replace('p', '');
-    candidates.push(`https://${baseDomain}/${basePath}/${cleanQ}p60/index-dvr.m3u8`);
-    candidates.push(`https://${baseDomain}/${basePath}/${cleanQ}p30/index-dvr.m3u8`);
-    candidates.push(`https://${baseDomain}/${basePath}/${cleanQ}p/index-dvr.m3u8`);
-    candidates.push(`https://${baseDomain}/${basePath}/${cleanQ}p30/index.m3u8`);
-    candidates.push(`https://${baseDomain}/${basePath}/${cleanQ}p60/index.m3u8`);
+  interface CandidateTierDef {
+    id: string;
+    label: string;
+    height: number;
+    width?: number;
+    fps?: number;
+    bandwidth: number;
+    paths: string[];
   }
-  candidates.push(`https://${baseDomain}/${basePath}/chunked/index-dvr.m3u8`);
-  candidates.push(`https://${baseDomain}/${basePath}/chunked/index-muted.m3u8`);
-  candidates.push(`https://${baseDomain}/${basePath}/chunked/index.m3u8`);
 
-  for (const candidate of candidates) {
-    try {
-      const res = await fetch(candidate, { method: 'HEAD' });
-      if (res.ok) {
-        console.log(`[Twitch CloudFront Direct ✅] Resolved: ${candidate}`);
-        return candidate;
+  const tierDefs: CandidateTierDef[] = [
+    {
+      id: '1080p',
+      label: '1080p60 (Source)',
+      height: 1080,
+      width: 1920,
+      fps: 60,
+      bandwidth: 8000000,
+      paths: ['chunked/index-dvr.m3u8', 'chunked/index-muted.m3u8', 'chunked/index.m3u8'],
+    },
+    {
+      id: '720p60',
+      label: '720p60 (HD)',
+      height: 720,
+      width: 1280,
+      fps: 60,
+      bandwidth: 3500000,
+      paths: ['720p60/index-dvr.m3u8', '720p60/index.m3u8'],
+    },
+    {
+      id: '720p',
+      label: '720p (30fps)',
+      height: 720,
+      width: 1280,
+      fps: 30,
+      bandwidth: 2500000,
+      paths: ['720p30/index-dvr.m3u8', '720p/index-dvr.m3u8', '720p30/index.m3u8'],
+    },
+    {
+      id: '480p',
+      label: '480p (SD)',
+      height: 480,
+      width: 854,
+      fps: 30,
+      bandwidth: 1500000,
+      paths: ['480p30/index-dvr.m3u8', '480p/index-dvr.m3u8', '480p30/index.m3u8'],
+    },
+    {
+      id: '360p',
+      label: '360p',
+      height: 360,
+      width: 640,
+      fps: 30,
+      bandwidth: 800000,
+      paths: ['360p30/index-dvr.m3u8', '360p/index-dvr.m3u8', '360p30/index.m3u8'],
+    },
+    {
+      id: '160p',
+      label: '160p',
+      height: 160,
+      width: 284,
+      fps: 30,
+      bandwidth: 300000,
+      paths: ['160p30/index-dvr.m3u8', '160p/index-dvr.m3u8', '160p30/index.m3u8'],
+    },
+    {
+      id: 'audio_only',
+      label: 'Audio Only',
+      height: 0,
+      fps: 0,
+      bandwidth: 160000,
+      paths: ['audio_only/index-dvr.m3u8', 'audio_only/index.m3u8'],
+    },
+  ];
+
+  // Helper to probe first valid URL for a tier
+  const probeTier = async (tier: CandidateTierDef): Promise<StreamQualityOption | null> => {
+    for (const subPath of tier.paths) {
+      const candidateUrl = `https://${baseDomain}/${basePath}/${subPath}`;
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch(candidateUrl, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeout);
+        if (res.ok) {
+          return {
+            id: tier.id,
+            label: tier.label,
+            height: tier.height,
+            width: tier.width,
+            fps: tier.fps,
+            bandwidth: tier.bandwidth,
+            url: candidateUrl,
+          };
+        }
+      } catch {
+        // Continue to next path candidate for this tier
       }
-    } catch {
-      // Continue to next candidate
+    }
+    return null;
+  };
+
+  // Probe all tiers concurrently
+  const probed = await Promise.all(tierDefs.map((t) => probeTier(t)));
+  const availableQualities = probed.filter((q): q is StreamQualityOption => q !== null);
+
+  if (availableQualities.length === 0) {
+    return null;
+  }
+
+  // Pick best matching URL according to requested quality
+  let selectedUrl = availableQualities[0].url; // Default to chunked/source
+
+  if (quality && quality !== 'best' && quality !== 'source') {
+    const cleanQ = quality.toLowerCase();
+    const exactMatch = availableQualities.find(
+      (q) => q.id === cleanQ || q.id.startsWith(cleanQ) || q.label.toLowerCase().startsWith(cleanQ)
+    );
+    if (exactMatch) {
+      selectedUrl = exactMatch.url;
+    } else {
+      const targetHeight = parseInt(cleanQ.replace(/[^\d]/g, ''), 10);
+      if (!isNaN(targetHeight)) {
+        const match = availableQualities.find((q) => q.height > 0 && q.height <= targetHeight);
+        if (match) selectedUrl = match.url;
+      }
     }
   }
 
-  return null;
+  console.log(`[Twitch CloudFront Direct ✅] Resolved: ${selectedUrl} with ${availableQualities.length} tiers`);
+  return {
+    streamUrl: selectedUrl,
+    qualities: availableQualities,
+  };
 }
 
 /**
  * Resolves explicit VOD URL via CloudFront directly.
  */
-async function resolveVodCloudFront(vodId: string, quality?: string): Promise<string | null> {
+async function resolveVodCloudFront(
+  vodId: string,
+  quality?: string
+): Promise<{ streamUrl: string; qualities: StreamQualityOption[] } | null> {
   try {
     const res = await fetch('https://gql.twitch.tv/gql', {
       method: 'POST',
@@ -471,6 +652,8 @@ export class TwitchStreamResolverService {
       let resolvedVodId: string | undefined = vodId;
       let resolvedChannel: string | undefined = channel;
       let streamUrl: string | null = null;
+      let resolvedQualities: StreamQualityOption[] = [];
+      let resolvedMasterUrl: string | undefined;
 
       // ─── CLIP ─────────────────────────────────────────────────────────────
       if (isClip) {
@@ -489,19 +672,33 @@ export class TwitchStreamResolverService {
           resolvedVodId = String(dvrNode.id);
 
           // Priority 1: Direct CloudFront HLS (Fastest, zero blocking, instant 200 OK)
-          streamUrl = await resolveCloudFrontDvrFromNode(dvrNode, quality);
+          const cfRes = await resolveCloudFrontDvrFromNode(dvrNode, quality);
+          if (cfRes) {
+            streamUrl = cfRes.streamUrl;
+            resolvedQualities = cfRes.qualities;
+          }
 
           // Priority 2: Usher VOD
           if (!streamUrl) {
             console.warn(`[Twitch Stream Resolver ⚠️] CloudFront direct failed, trying Usher VOD...`);
-            streamUrl = await resolveVodHls(dvrNode.id, quality);
+            const usherVodRes = await resolveVodHls(dvrNode.id, quality);
+            if (usherVodRes) {
+              streamUrl = usherVodRes.streamUrl;
+              resolvedQualities = usherVodRes.qualities;
+              resolvedMasterUrl = usherVodRes.masterPlaylistUrl;
+            }
           }
 
           // Priority 3: Live Usher
           if (!streamUrl) {
             console.warn(`[Twitch Stream Resolver ⚠️] VOD Usher failed, trying live Usher...`);
-            streamUrl = await resolveChannelHls(channel, quality);
-            if (streamUrl) sourceType = 'live';
+            const liveUsherRes = await resolveChannelHls(channel, quality);
+            if (liveUsherRes) {
+              streamUrl = liveUsherRes.streamUrl;
+              resolvedQualities = liveUsherRes.qualities;
+              resolvedMasterUrl = liveUsherRes.masterPlaylistUrl;
+              sourceType = 'live';
+            }
           }
 
           // Priority 4: yt-dlp last resort
@@ -512,7 +709,12 @@ export class TwitchStreamResolverService {
         } else {
           sourceType = 'live';
           console.log(`[Twitch Stream Resolver] 📡 No DVR VOD found, resolving live channel via Usher: ${channel}`);
-          streamUrl = await resolveChannelHls(channel, quality);
+          const liveUsherRes = await resolveChannelHls(channel, quality);
+          if (liveUsherRes) {
+            streamUrl = liveUsherRes.streamUrl;
+            resolvedQualities = liveUsherRes.qualities;
+            resolvedMasterUrl = liveUsherRes.masterPlaylistUrl;
+          }
 
           if (!streamUrl) {
             console.warn(`[Twitch Stream Resolver ⚠️] Live Usher failed, trying yt-dlp...`);
@@ -530,12 +732,21 @@ export class TwitchStreamResolverService {
         sourceType = 'vod';
 
         // Priority 1: Direct CloudFront HLS
-        streamUrl = await resolveVodCloudFront(vodId, quality);
+        const cfRes = await resolveVodCloudFront(vodId, quality);
+        if (cfRes) {
+          streamUrl = cfRes.streamUrl;
+          resolvedQualities = cfRes.qualities;
+        }
 
         // Priority 2: Usher VOD
         if (!streamUrl) {
           console.warn(`[Twitch Stream Resolver ⚠️] CloudFront direct failed, trying Usher VOD...`);
-          streamUrl = await resolveVodHls(vodId, quality);
+          const usherVodRes = await resolveVodHls(vodId, quality);
+          if (usherVodRes) {
+            streamUrl = usherVodRes.streamUrl;
+            resolvedQualities = usherVodRes.qualities;
+            resolvedMasterUrl = usherVodRes.masterPlaylistUrl;
+          }
         }
 
         // Priority 3: yt-dlp
@@ -558,6 +769,8 @@ export class TwitchStreamResolverService {
         sourceType,
         vodId: resolvedVodId,
         channel: resolvedChannel,
+        masterPlaylistUrl: resolvedMasterUrl,
+        qualities: resolvedQualities,
       };
 
       // Cache for 12 minutes

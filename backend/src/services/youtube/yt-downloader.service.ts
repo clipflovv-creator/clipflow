@@ -3,6 +3,7 @@ import fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getFFmpegAspectFilter } from '../video-crop.service.js';
+import { getFFmpegLocationFlag } from '../../utils/binary-resolver.util.js';
 
 /**
  * Looks for a YouTube cookies.txt file in common locations relative to the backend binary.
@@ -119,9 +120,10 @@ export class YouTubeDownloaderService {
     const endTimeStr = isTrimmed && trimEnd ? formatSecondsToTime(trimEnd) : '';
 
     const buildArgs = (useCookies: boolean): string[] => {
+      const ffmpegLocFlag = getFFmpegLocationFlag(ffmpegBin);
       const args: string[] = [
         `"${ytDlpBin}"`,
-        `--ffmpeg-location "${path.dirname(ffmpegBin)}"`,
+        ...(ffmpegLocFlag ? [ffmpegLocFlag] : []),
         '--js-runtimes node',
       ];
 
@@ -184,12 +186,17 @@ export class YouTubeDownloaderService {
       const ffmpegArgs: string[] = [
         `"${ffmpegBin}"`,
         '-y',
+        '-fflags +genpts+discardcorrupt',
         `-i "${rawTarget}"`,
         `-vf "${filterString}"`,
         '-c:v libx264',
         '-preset fast',
         '-crf 18',
         '-c:a aac',
+        '-map 0:v:0',
+        '-map 0:a:0?',
+        '-avoid_negative_ts make_zero',
+        '-movflags +faststart',
         `"${finalFile}"`,
       ];
 

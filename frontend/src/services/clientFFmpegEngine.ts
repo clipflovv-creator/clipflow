@@ -264,10 +264,16 @@ async function fetchSmartMediaStream(
     }
 
     // 2. Fallback: clamped chunked range from byte 0
-    const bytesNeeded = Math.min(
-      200 * 1048576,
-      Math.max(4 * 1048576, Math.ceil((trimEnd + 15) * estimatedBitrate))
-    );
+    const rawBytesNeeded = Math.ceil((trimEnd + 15) * estimatedBitrate);
+    const maxBrowserMemoryBytes = 200 * 1048576; // 200 MB
+
+    // If trimStart is deep into a long video and exceeds browser memory limit without sidx,
+    // throw so caller can gracefully delegate to high-speed server pipeline
+    if (trimStart > 240 && rawBytesNeeded > maxBrowserMemoryBytes * 1.5) {
+      throw new Error(`Media range at ${Math.round(trimStart)}s exceeds in-browser direct slice memory. Using cloud engine fallback.`);
+    }
+
+    const bytesNeeded = Math.min(maxBrowserMemoryBytes, Math.max(4 * 1048576, rawBytesNeeded));
     const bytes = await fetchMediaInChunks(url, bytesNeeded, onProgress);
     return {
       bytes,

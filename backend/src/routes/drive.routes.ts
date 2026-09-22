@@ -17,23 +17,13 @@ import fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
-function resolveYtDlpBinary(): string {
-  const candidates = [
-    path.join(process.cwd(), 'backend', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'yt-dlp.exe'),
-    path.join(process.cwd(), 'backend', 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'qt-app', 'bin', 'yt-dlp.exe'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'yt-dlp';
-}
+import {
+  resolveYtDlpBinary,
+  resolveFFmpegBinary,
+  getFFmpegLocationFlag,
+} from '../utils/binary-resolver.util.js';
 
 function resolveTempDir(): string {
-  // Check cwd/temp FIRST (covers the case where cwd is already inside /backend)
-  // then cwd/backend/temp (covers running from project root)
   const candidates = [
     path.join(process.cwd(), 'temp'),
     path.join(process.cwd(), 'backend', 'temp'),
@@ -63,21 +53,6 @@ function resolvePublicDownloadsDir(): string {
   const fallback = path.join(process.cwd(), 'public', 'downloads');
   if (!fs.existsSync(fallback)) fs.mkdirSync(fallback, { recursive: true });
   return fallback;
-}
-
-function resolveFFmpegBinary(): string {
-  const localAppData = process.env.LOCALAPPDATA || '';
-  const candidates = [
-    path.join(process.cwd(), 'backend', 'ffmpeg.exe'),
-    path.join(process.cwd(), 'ffmpeg.exe'),
-    path.join(process.cwd(), 'qt-app', 'bin', 'ffmpeg.exe'),
-    path.join(localAppData, 'Programs', 'ClipFlow', 'bin', 'ffmpeg.exe'),
-    path.join(localAppData, 'ClipFlow', 'bin', 'ffmpeg.exe'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'ffmpeg';
 }
 
 const execAsync = promisify(exec);
@@ -302,10 +277,10 @@ router.post('/export', requireAuth, async (req: AuthenticatedRequest, res: Respo
         onProgress: (phase, percent, speed) => emitProgress(phase, percent, speed),
       });
     } else {
-      // Generic Platform Downloader
+      const ffmpegLocFlag = getFFmpegLocationFlag(FFMPEG_BIN);
       const ytDlpArgs: string[] = [
         `"${YTDLP_BIN}"`,
-        `--ffmpeg-location "${path.dirname(FFMPEG_BIN)}"`,
+        ...(ffmpegLocFlag ? [ffmpegLocFlag] : []),
         '--js-runtimes node',
         '--no-warnings',
         '--no-check-certificate',

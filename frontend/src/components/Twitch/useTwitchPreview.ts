@@ -5,11 +5,24 @@ const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
     ? window.location.origin
     : 'http://localhost:3001');
 
+export interface TwitchQualityOption {
+  id: string;
+  label: string;
+  height: number;
+  width?: number;
+  bandwidth: number;
+  fps?: number;
+  url: string;
+  proxiedUrl?: string;
+}
+
 export interface TwitchStreamInfo {
   twitchHlsUrl: string;
   sourceType: 'dvr' | 'live' | 'vod' | 'clip' | '';
   vodId?: string;
   channel?: string;
+  masterPlaylistUrl?: string;
+  qualities: TwitchQualityOption[];
   isLoadingStream: boolean;
   streamError: string;
   refreshStream: () => void;
@@ -31,6 +44,8 @@ export function useTwitchPreview(
   const [sourceType, setSourceType] = useState<'dvr' | 'live' | 'vod' | 'clip' | ''>('');
   const [vodId, setVodId] = useState<string | undefined>(undefined);
   const [channel, setChannel] = useState<string | undefined>(undefined);
+  const [masterPlaylistUrl, setMasterPlaylistUrl] = useState<string | undefined>(undefined);
+  const [qualities, setQualities] = useState<TwitchQualityOption[]>([]);
   const [isLoadingStream, setIsLoadingStream] = useState<boolean>(false);
   const [streamError, setStreamError] = useState<string>('');
 
@@ -84,6 +99,8 @@ export function useTwitchPreview(
         setSourceType(data.sourceType || (isTwitchLiveChannel ? 'dvr' : 'vod'));
         setVodId(data.vodId);
         setChannel(data.channel);
+        setMasterPlaylistUrl(data.masterPlaylistUrl);
+        setQualities(data.qualities || []);
         setIsLoadingStream(false);
       } else {
         throw new Error('Stream URL missing from stream-info response');
@@ -102,6 +119,8 @@ export function useTwitchPreview(
       setSourceType('');
       setVodId(undefined);
       setChannel(undefined);
+      setMasterPlaylistUrl(undefined);
+      setQualities([]);
       setIsLoadingStream(false);
       setStreamError('');
       return;
@@ -121,6 +140,8 @@ export function useTwitchPreview(
     sourceType,
     vodId,
     channel,
+    masterPlaylistUrl,
+    qualities,
     isLoadingStream,
     streamError,
     refreshStream: () => fetchTwitchStream(false),
