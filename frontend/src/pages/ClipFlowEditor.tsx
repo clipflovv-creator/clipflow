@@ -36,7 +36,7 @@ import {
 import { useEditorMetadata } from '../hooks/editor/useEditorMetadata';
 import { useEditorPlayback } from '../hooks/editor/useEditorPlayback';
 
-import { resolveRelayUrl } from '../services/clientMediaRangeFetcher.js';
+import { resolveRelayUrl, getAudioTrackScore } from '../services/clientMediaRangeFetcher.js';
 
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
   ((typeof window !== 'undefined' && window.location.port !== '5173')
@@ -427,10 +427,18 @@ export default function ClipFlowEditor() {
   const activeAudioSrc = useMemo(() => {
     if (activeVideoHasAudio || !metadata || youtubeId) return null;
 
-    const audioTrack =
-      (metadata.audio_formats || []).find((f: any) => f.url) ||
-      (metadata.formats || []).find((f: any) => f.url && f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none')) ||
-      (metadata.formats || []).find((f: any) => f.url && f.acodec && f.acodec !== 'none');
+    const defaultLang = metadata?.audio_language || metadata?.language;
+    const directAudioCandidates = [
+      ...(metadata.audio_formats || []),
+      ...(metadata.formats || []).filter((f: any) => f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none')),
+      ...(metadata.formats || []).filter((f: any) => f.acodec && f.acodec !== 'none'),
+    ].filter((f: any) => f.url);
+
+    const sortedAudio = [...directAudioCandidates].sort(
+      (a, b) => getAudioTrackScore(b, defaultLang) - getAudioTrackScore(a, defaultLang)
+    );
+
+    const audioTrack = sortedAudio[0];
 
     if (!audioTrack?.url) return null;
 

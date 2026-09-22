@@ -642,6 +642,8 @@ router.post('/metadata', async (req: Request, res: Response) => {
       webpage_url: vodUrl,
       subtitles: Object.keys(metadata.subtitles || {}),
       automatic_captions: Object.keys(metadata.automatic_captions || {}),
+      audio_language: metadata.audio_language || metadata.language || null,
+      language: metadata.language || null,
       formats: (metadata.formats || []).map((f: any) => ({
         format_id: f.format_id,
         ext: f.ext,
@@ -654,6 +656,9 @@ router.post('/metadata', async (req: Request, res: Response) => {
         vcodec: f.vcodec,
         acodec: f.acodec,
         format_note: f.format_note,
+        language: f.language,
+        language_preference: f.language_preference,
+        is_default: f.is_default || (typeof f.format_note === 'string' && f.format_note.toLowerCase().includes('default')),
         tbr: f.tbr,
         abr: f.abr,
         url: f.url,
@@ -680,6 +685,10 @@ router.post('/metadata', async (req: Request, res: Response) => {
           ext: f.ext,
           protocol: f.protocol,
           acodec: f.acodec,
+          format_note: f.format_note,
+          language: f.language,
+          language_preference: f.language_preference,
+          is_default: f.is_default || (typeof f.format_note === 'string' && f.format_note.toLowerCase().includes('default')),
           abr: f.abr,
           filesize: f.filesize || f.filesize_approx,
           url: f.url,
@@ -703,17 +712,17 @@ router.post('/download', async (req: Request, res: Response) => {
   if (!url) return res.status(400).json({ error: 'url is required' });
 
   try {
+    const defaultAudioSelector = '(bestaudio[format_note*=original][ext=m4a]/bestaudio[format_note*=original]/bestaudio[format_note*=default][ext=m4a]/bestaudio[format_note*=default]/bestaudio[language_preference>=10][ext=m4a]/bestaudio[language_preference>=10]/bestaudio[ext=m4a]/bestaudio)';
     let ytFormat: string;
     const audioFlags: string[] = [];
 
     if (format === 'mp4') {
       const height = quality.replace('p', '');
-      // No [ext=mp4] on video: YouTube serves 1080p+ as VP9/webm which is fine,
-      // ffmpeg will remux/encode to mp4 via --merge-output-format mp4.
-      ytFormat = `bestvideo[height=${height}]+bestaudio[ext=m4a]/bestvideo[height=${height}]+bestaudio/bestvideo[height<=${height}]+bestaudio[ext=m4a]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`;
+      // Prioritize original/default language audio tracks over dubs
+      ytFormat = `bestvideo[height=${height}]+${defaultAudioSelector}/bestvideo[height<=${height}]+${defaultAudioSelector}/best[height<=${height}]/best`;
       audioFlags.push('--merge-output-format', 'mp4');
     } else {
-      ytFormat = 'bestaudio/best';
+      ytFormat = 'bestaudio[format_note*=original]/bestaudio[format_note*=default]/bestaudio[language_preference>=10]/bestaudio/best';
       audioFlags.push('--extract-audio', '--audio-format', format, '--audio-quality', audioBitrate);
     }
 
@@ -923,12 +932,13 @@ router.post('/download', async (req: Request, res: Response) => {
 
         if (isAudio) {
           const audioQuality = req.body.audioQuality || req.body.audioBitrate || '0';
-          ytDlpArgs.push('-x', '--audio-format', format, '--audio-quality', String(audioQuality));
+          ytDlpArgs.push('-f', '"bestaudio[format_note*=original]/bestaudio[format_note*=default]/bestaudio[language_preference>=10]/bestaudio/best"', '-x', '--audio-format', format, '--audio-quality', String(audioQuality));
         } else {
           const heightLimit = YouTubeDownloaderService.parseHeightLimit(quality);
+          const defaultAudioSelector = '(bestaudio[format_note*=original][ext=m4a]/bestaudio[format_note*=original]/bestaudio[format_note*=default][ext=m4a]/bestaudio[format_note*=default]/bestaudio[language_preference>=10][ext=m4a]/bestaudio[language_preference>=10]/bestaudio[ext=m4a]/bestaudio)';
           const ytFormat = heightLimit
-            ? `bestvideo[height<=${heightLimit}]+bestaudio/best[height<=${heightLimit}]/bestvideo+bestaudio/best`
-            : 'bestvideo+bestaudio/best';
+            ? `bestvideo[height<=${heightLimit}]+${defaultAudioSelector}/best[height<=${heightLimit}]/bestvideo+${defaultAudioSelector}/best`
+            : `bestvideo+${defaultAudioSelector}/best`;
           ytDlpArgs.push('-f', `"${ytFormat}"`, '--merge-output-format', 'mp4');
         }
 

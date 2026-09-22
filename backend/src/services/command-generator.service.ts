@@ -83,9 +83,10 @@ export function generatePowerShellWorkflow(options: CommandGeneratorOptions): Ge
   }
 
   // Format string
+  const defaultAudioSelector = '(bestaudio[format_note*=original][ext=m4a]/bestaudio[format_note*=original]/bestaudio[format_note*=default][ext=m4a]/bestaudio[format_note*=default]/bestaudio[language_preference>=10][ext=m4a]/bestaudio[language_preference>=10]/bestaudio[ext=m4a]/bestaudio)';
   const ytFormat = heightLimit
-    ? `bestvideo[height<=${heightLimit}]+bestaudio/best[height<=${heightLimit}]`
-    : `bestvideo+bestaudio/best`;
+    ? `bestvideo[height<=${heightLimit}]+${defaultAudioSelector}/best[height<=${heightLimit}]`
+    : `bestvideo+${defaultAudioSelector}/best`;
 
   // Format time strings if trimming
   const isTrimmed = typeof trimEnd === 'number' && trimEnd > trimStart;

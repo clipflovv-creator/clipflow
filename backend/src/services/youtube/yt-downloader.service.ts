@@ -132,11 +132,12 @@ export class YouTubeDownloaderService {
       }
 
       if (isAudio) {
-        args.push('-x', '--audio-format', format, '--audio-quality', String(audioQuality));
+        args.push('-f', '"bestaudio[format_note*=original]/bestaudio[format_note*=default]/bestaudio[language_preference>=10]/bestaudio/best"', '-x', '--audio-format', format, '--audio-quality', String(audioQuality));
       } else {
+        const defaultAudioSelector = '(bestaudio[format_note*=original][ext=m4a]/bestaudio[format_note*=original]/bestaudio[format_note*=default][ext=m4a]/bestaudio[format_note*=default]/bestaudio[language_preference>=10][ext=m4a]/bestaudio[language_preference>=10]/bestaudio[ext=m4a]/bestaudio)';
         const ytFormat = heightLimit
-          ? `bestvideo[height<=${heightLimit}]+bestaudio/best[height<=${heightLimit}]`
-          : 'bestvideo+bestaudio/best';
+          ? `bestvideo[height<=${heightLimit}]+${defaultAudioSelector}/best[height<=${heightLimit}]`
+          : `bestvideo+${defaultAudioSelector}/best`;
         args.push('-f', `"${ytFormat}"`, '--merge-output-format', 'mp4');
       }
 

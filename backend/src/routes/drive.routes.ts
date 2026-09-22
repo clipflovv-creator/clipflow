@@ -289,12 +289,13 @@ router.post('/export', requireAuth, async (req: AuthenticatedRequest, res: Respo
 
       if (isAudio) {
         const q = audioQuality || audioBitrate || '0';
-        ytDlpArgs.push('-x', '--audio-format', format, '--audio-quality', String(q));
+        ytDlpArgs.push('-f', '"bestaudio[format_note*=original]/bestaudio[format_note*=default]/bestaudio[language_preference>=10]/bestaudio/best"', '-x', '--audio-format', format, '--audio-quality', String(q));
       } else {
         const heightLimit = YouTubeDownloaderService.parseHeightLimit(quality);
+        const defaultAudioSelector = '(bestaudio[format_note*=original][ext=m4a]/bestaudio[format_note*=original]/bestaudio[format_note*=default][ext=m4a]/bestaudio[format_note*=default]/bestaudio[language_preference>=10][ext=m4a]/bestaudio[language_preference>=10]/bestaudio[ext=m4a]/bestaudio)';
         const ytFormat = heightLimit
-          ? `bestvideo[height<=${heightLimit}]+bestaudio/best[height<=${heightLimit}]/bestvideo+bestaudio/best`
-          : 'bestvideo+bestaudio/best';
+          ? `bestvideo[height<=${heightLimit}]+${defaultAudioSelector}/best[height<=${heightLimit}]/bestvideo+${defaultAudioSelector}/best`
+          : `bestvideo+${defaultAudioSelector}/best`;
         ytDlpArgs.push('-f', `"${ytFormat}"`, '--merge-output-format', 'mp4');
       }
 

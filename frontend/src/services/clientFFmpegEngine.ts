@@ -485,7 +485,7 @@ export class ClientFFmpegEngine {
     // ── FAST STREAM COPY PATH (Default 16:9 / No Cropping) ───────────────────
     // When no aspect ratio crop is required, perform ultrafast lossless stream copy
     // without re-encoding video frames, taking <0.5s and using zero CPU / WASM memory.
-    if (!cropFilter) {
+    if (!videoFilter) {
       if (onProgress) onProgress('⚡ Fast muxing trimmed clip (lossless stream copy)...', 85);
       const copyArgs: string[] = [
         '-y',

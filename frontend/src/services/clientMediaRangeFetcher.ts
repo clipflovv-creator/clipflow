@@ -124,6 +124,45 @@ export function isDirectStream(f: any): boolean {
 }
 
 /**
+ * Computes a preference score for an audio format.
+ * Prioritizes original/default language audio, penalizes dubs,
+ * prefers standard AAC/M4A, and uses bitrate strictly as a tiebreaker.
+ */
+export function getAudioTrackScore(f: any, defaultLang?: string): number {
+  if (!f) return -9999;
+  let score = 0;
+  const note = (f.format_note || '').toLowerCase();
+  const lang = (f.language || '').toLowerCase();
+  const pref = typeof f.language_preference === 'number' ? f.language_preference : 0;
+
+  // 1. Original / Default flags from yt-dlp
+  if (note.includes('original')) score += 1000;
+  if (note.includes('default') || f.is_default) score += 500;
+  if (pref >= 10) score += 800;
+
+  // 2. Penalty for dubbed tracks
+  if (note.includes('dubbed') || note.includes('dub')) score -= 1500;
+  if (pref < 0) score -= 500;
+
+  // 3. Language match if defaultLang is available
+  if (defaultLang && lang) {
+    const cleanDef = defaultLang.toLowerCase();
+    if (lang === cleanDef || lang.split('-')[0] === cleanDef.split('-')[0]) {
+      score += 400;
+    }
+  }
+
+  // 4. Prefer standard AAC/M4A for zero-glitch browser & player compatibility
+  const isAacM4a = f.ext === 'm4a' || (f.acodec && (f.acodec.startsWith('mp4a') || f.acodec.includes('aac')));
+  if (isAacM4a) score += 100;
+
+  // 5. Bitrate tiebreaker (scaled so minor kbps differences never override original audio)
+  score += Math.min(50, (f.abr || f.tbr || 0) / 10);
+
+  return score;
+}
+
+/**
  * Finds the optimal video and audio stream formats for a requested target resolution.
  * Prioritizes standard universal MP4 (H.264 / AVC1) and M4A (AAC) formats.
  */
@@ -178,23 +217,21 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
                 combined[0] || null;
   }
 
-  // Helper to check if audio format is standard AAC/M4A
-  const isAacM4a = (f: any) => f.ext === 'm4a' || (f.acodec && (f.acodec.startsWith('mp4a') || f.acodec.includes('aac')));
+  // Find best matching audio stream (strongly prioritize original/default audio over dubs & prefer M4A / AAC)
+  const defaultLang = metadata?.audio_language || metadata?.language;
+  const sortAudio = (list: any[]) =>
+    [...list].sort((a, b) => getAudioTrackScore(b, defaultLang) - getAudioTrackScore(a, defaultLang));
 
-  // Find best matching audio stream (strongly prefer M4A / AAC for zero-glitch browser & player compatibility)
-  const sortedAudio = [...audioOnly].sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
-  let bestAudio = sortedAudio.find(isAacM4a) || sortedAudio[0] || null;
+  let bestAudio = sortAudio(audioOnly)[0] || null;
 
   // Robust fallback: Check metadata.audio_formats or any direct format with acodec
   if (!bestAudio) {
     const directAudioFormats = (metadata.audio_formats || []).filter(isDirectStream);
-    const sortedAudioMeta = [...directAudioFormats].sort((a: any, b: any) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
-    bestAudio = sortedAudioMeta.find(isAacM4a) || sortedAudioMeta[0] || null;
+    bestAudio = sortAudio(directAudioFormats)[0] || null;
   }
   if (!bestAudio) {
     const anyAudio = directFormats.filter((f) => f.url && f.acodec && f.acodec !== 'none');
-    const sortedAnyAudio = [...anyAudio].sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
-    bestAudio = sortedAnyAudio.find(isAacM4a) || sortedAnyAudio[0] || null;
+    bestAudio = sortAudio(anyAudio)[0] || null;
   }
 
   // Best combined format fallback
