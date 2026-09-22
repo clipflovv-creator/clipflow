@@ -198,27 +198,31 @@ export function EditorTimeline({
             </Slider.Track>
             <Slider.Thumb
               aria-label="Start Trim"
-              className="block w-3.5 h-[56px] bg-zinc-200 rounded-sm border-2 border-white shadow-lg shadow-black/50 cursor-ew-resize focus:outline-none hover:bg-white transition-colors"
-            />
+              className="block w-4 sm:w-3.5 h-[56px] bg-white sm:bg-zinc-200 rounded-l-md sm:rounded-sm border-2 border-white shadow-xl shadow-black/80 cursor-ew-resize focus:outline-none hover:bg-white transition-colors relative touch-pan-none before:absolute before:-inset-3 before:content-[''] select-none"
+            >
+              <div className="absolute inset-y-3.5 left-1/2 -translate-x-1/2 w-[2px] bg-black/60 rounded-full" />
+            </Slider.Thumb>
             <Slider.Thumb
               aria-label="End Trim"
-              className="block w-3.5 h-[56px] bg-zinc-200 rounded-sm border-2 border-white shadow-lg shadow-black/50 cursor-ew-resize focus:outline-none hover:bg-white transition-colors"
-            />
+              className="block w-4 sm:w-3.5 h-[56px] bg-white sm:bg-zinc-200 rounded-r-md sm:rounded-sm border-2 border-white shadow-xl shadow-black/80 cursor-ew-resize focus:outline-none hover:bg-white transition-colors relative touch-pan-none before:absolute before:-inset-3 before:content-[''] select-none"
+            >
+              <div className="absolute inset-y-3.5 left-1/2 -translate-x-1/2 w-[2px] bg-black/60 rounded-full" />
+            </Slider.Thumb>
           </Slider.Root>
         )}
       </div>
 
       {/* Duration info and manual inputs */}
-      <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-2 text-xs font-medium">
-          <Clock className="w-3.5 h-3.5 text-zinc-400" />
-          <span className="text-gray-400">Selected Duration:</span>
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-1.5 px-0.5">
+        <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-medium">
+          <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-zinc-400" />
+          <span className="text-gray-400">Duration:</span>
           <span className="font-mono font-bold text-white">
             {isTrimEnabled
               ? formatTime(trimRange[1] - trimRange[0], (trimRange[1] - trimRange[0]) < 10 || (trimRange[1] - trimRange[0]) % 1 !== 0)
               : formatTime(effectiveDuration, effectiveDuration < 10)}
           </span>
-          <span className="text-gray-500">
+          <span className="text-gray-500 text-[10px] sm:text-xs">
             ({(isTrimEnabled ? (trimRange[1] - trimRange[0]) : effectiveDuration).toFixed(1)}s)
           </span>
         </div>

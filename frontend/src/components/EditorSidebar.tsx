@@ -21,6 +21,8 @@ interface EditorSidebarProps {
   onLoadVideo?: (url: string) => void;
   isLoadingMeta?: boolean;
   currentVideoUrl?: string;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export const EditorSidebar: React.FC<EditorSidebarProps> = ({
@@ -32,6 +34,8 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
   onLoadVideo,
   isLoadingMeta = false,
   currentVideoUrl = '',
+  isMobileOpen = false,
+  onCloseMobile,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -100,6 +104,7 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
   const handleNavClick = (id: string) => {
     const activeVideo = getActiveVideoUrl();
     const search = activeVideo ? `?url=${encodeURIComponent(activeVideo)}` : '';
+    if (onCloseMobile) onCloseMobile();
 
     if (id === 'Studio') {
       navigate(`/editor/studio${search}`);
@@ -113,118 +118,140 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
     }
   };
 
+  const renderContent = (isMobileView: boolean = false) => (
+    <>
+      {/* Logo at Top */}
+      <div className="h-[54px] flex items-center justify-between px-3.5 border-b border-white/[0.06] shrink-0">
+        <button
+          onClick={() => {
+            if (isMobileView && onCloseMobile) onCloseMobile();
+            navigate('/');
+          }}
+          className="flex items-center gap-2.5 overflow-hidden group focus:outline-none cursor-pointer py-1 text-left"
+          title="ClipFlow Home"
+        >
+          <img
+            src="/logo.ico"
+            alt="ClipFlow"
+            className="w-7 h-7 object-contain shrink-0 group-hover:scale-110 transition-transform"
+          />
+          <span className="text-[15px] font-black text-white tracking-tight truncate group-hover:text-blue-400 transition-colors">ClipFlow</span>
+        </button>
+        {isMobileView && (
+          <button
+            onClick={onCloseMobile}
+            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"
+            title="Close menu"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* URL Switcher (if in Studio) */}
+      {showUrlChange && setNewUrlInput && onLoadVideo && (
+        <div className="px-3 py-3 border-b border-white/[0.06]">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (newUrlInput.trim()) {
+                onLoadVideo(newUrlInput.trim());
+                if (isMobileView && onCloseMobile) onCloseMobile();
+              }
+            }}
+            className="space-y-2"
+          >
+            <input
+              type="url"
+              value={newUrlInput}
+              onChange={(e) => setNewUrlInput(e.target.value)}
+              placeholder="Paste new video URL..."
+              className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
+            />
+            <button
+              type="submit"
+              disabled={isLoadingMeta || !newUrlInput.trim()}
+              className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              Load Video
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Nav Items */}
+      <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto overflow-x-hidden">
+        {NAV_ITEMS.map((item) => {
+          const isActive = activeNav === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => handleNavClick(item.id)}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-150 text-left group cursor-pointer ${
+                isActive
+                  ? 'bg-white/10 text-white border border-white/15'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <item.icon
+                  className={`w-4 h-4 shrink-0 transition-colors ${
+                    isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'
+                  }`}
+                />
+                <span className="text-xs font-semibold truncate">{item.label}</span>
+              </div>
+              {item.isSoon && (
+                <span className="px-1.5 py-0.5 rounded-md bg-white/10 border border-white/15 text-[9px] font-extrabold text-zinc-300 uppercase tracking-wider shrink-0">
+                  SOON
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* User Info bottom card */}
+      <div className="p-3 border-t border-white/[0.06] shrink-0">
+        {isAuthenticated && user ? (
+          <div className="flex items-center gap-2.5 px-1">
+            <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0 border border-white/15">
+              {user.name ? user.name.charAt(0).toUpperCase() : (user.email ? user.email.charAt(0).toUpperCase() : 'U')}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-white truncate" title={user.name || user.email}>
+                {user.name || user.email}
+              </p>
+              <p className="text-[10px] text-zinc-400 truncate font-medium">{user.email}</p>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAuthModal(true)}
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-xs font-semibold transition-all cursor-pointer"
+          >
+            <User className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Sign In / Register</span>
+          </button>
+        )}
+      </div>
+    </>
+  );
+
   return (
     <>
+      {/* Desktop Persistent Sidebar */}
       <aside
         style={{ width: `${sidebarWidth}px` }}
-        className="shrink-0 flex flex-col bg-[#080808] border-r border-white/[0.06] overflow-hidden select-text h-full z-20"
+        className="hidden md:flex shrink-0 flex-col bg-[#080808] border-r border-white/[0.06] overflow-hidden select-text h-full z-20"
       >
-        {/* Logo at Top */}
-        <div className="h-[54px] flex items-center justify-between px-3.5 border-b border-white/[0.06] shrink-0">
-          <button
-            onClick={() => navigate('/')}
-            className="flex items-center gap-2.5 overflow-hidden group focus:outline-none cursor-pointer w-full text-left py-1"
-            title="ClipFlow Home"
-          >
-            <img
-              src="/logo.ico"
-              alt="ClipFlow"
-              className="w-7 h-7 object-contain shrink-0 group-hover:scale-110 transition-transform"
-            />
-            <span className="text-[15px] font-black text-white tracking-tight truncate group-hover:text-blue-400 transition-colors">ClipFlow</span>
-          </button>
-        </div>
-
-        {/* URL Switcher (if in Studio) */}
-        {showUrlChange && setNewUrlInput && onLoadVideo && (
-          <div className="px-3 py-3 border-b border-white/[0.06]">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (newUrlInput.trim()) onLoadVideo(newUrlInput.trim());
-              }}
-              className="space-y-2"
-            >
-              <input
-                type="url"
-                value={newUrlInput}
-                onChange={(e) => setNewUrlInput(e.target.value)}
-                placeholder="Paste new video URL..."
-                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-blue-500"
-              />
-              <button
-                type="submit"
-                disabled={isLoadingMeta || !newUrlInput.trim()}
-                className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                Load Video
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* Nav Items */}
-        <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto overflow-x-hidden">
-          {NAV_ITEMS.map((item) => {
-            const isActive = activeNav === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-150 text-left group cursor-pointer ${
-                  isActive
-                    ? 'bg-white/10 text-white border border-white/15'
-                    : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <item.icon
-                    className={`w-4 h-4 shrink-0 transition-colors ${
-                      isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'
-                    }`}
-                  />
-                  <span className="text-xs font-semibold truncate">{item.label}</span>
-                </div>
-                {item.isSoon && (
-                  <span className="px-1.5 py-0.5 rounded-md bg-white/10 border border-white/15 text-[9px] font-extrabold text-zinc-300 uppercase tracking-wider shrink-0">
-                    SOON
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* User Info bottom card */}
-        <div className="p-3 border-t border-white/[0.06] shrink-0">
-          {isAuthenticated && user ? (
-            <div className="flex items-center gap-2.5 px-1">
-              <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0 border border-white/15">
-                {user.name ? user.name.charAt(0).toUpperCase() : (user.email ? user.email.charAt(0).toUpperCase() : 'U')}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-white truncate" title={user.name || user.email}>
-                  {user.name || user.email}
-                </p>
-                <p className="text-[10px] text-zinc-400 truncate font-medium">{user.email}</p>
-              </div>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowAuthModal(true)}
-              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-xs font-semibold transition-all cursor-pointer"
-            >
-              <User className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Sign In / Register</span>
-            </button>
-          )}
-        </div>
+        {renderContent(false)}
       </aside>
 
-      {/* Draggable Vertical Splitter */}
+      {/* Desktop Draggable Vertical Splitter */}
       <div
         onMouseDown={() => setIsDragging(true)}
-        className={`w-2.5 hover:w-2.5 -mx-1 z-30 flex items-center justify-center cursor-col-resize group transition-colors select-none ${
+        className={`hidden md:flex w-2.5 hover:w-2.5 -mx-1 z-30 items-center justify-center cursor-col-resize group transition-colors select-none ${
           isDragging ? 'bg-white/20' : 'bg-transparent hover:bg-white/10'
         }`}
         title="Drag to resize left sidebar"
@@ -237,6 +264,30 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
           }`}
         />
       </div>
+
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+        {isMobileOpen && (
+          <div className="fixed inset-0 z-50 md:hidden flex">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={onCloseMobile}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.aside
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 280 }}
+              className="relative w-72 max-w-[85vw] h-full flex flex-col bg-[#09090c] border-r border-white/10 z-10 shadow-2xl overflow-hidden"
+            >
+              {renderContent(true)}
+            </motion.aside>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Auth Modal */}
       <AuthModal

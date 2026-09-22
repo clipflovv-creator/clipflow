@@ -124,11 +124,11 @@ export function EditorPlaybackControls({
       </div>
 
       {/* Controls Row */}
-      <div className="w-full flex items-center justify-between pb-1 relative mt-1">
-        <div className="flex items-center gap-1.5">
+      <div className="w-full flex items-center justify-between pb-1 relative mt-0.5 gap-1">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           <button
             onClick={() => seekRelative(-10)}
-            className="px-2 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 hover:text-white transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
+            className="px-1.5 sm:px-2 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 hover:text-white transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
             title="Rewind 10 seconds"
           >
             <RotateCcw className="w-3.5 h-3.5 text-zinc-400" />
@@ -137,19 +137,19 @@ export function EditorPlaybackControls({
 
           <button
             onClick={togglePlay}
-            className="p-2 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] text-white transition-colors flex items-center justify-center shadow-sm cursor-pointer"
+            className="p-2 sm:p-2 rounded-full sm:rounded-lg bg-white text-black sm:bg-white/[0.08] sm:hover:bg-white/[0.15] sm:text-white transition-all flex items-center justify-center shadow-md active:scale-95 cursor-pointer"
             title={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? (
-              <Pause className="w-3.5 h-3.5 fill-white" />
+              <Pause className="w-3.5 h-3.5 fill-current" />
             ) : (
-              <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+              <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
             )}
           </button>
 
           <button
             onClick={() => seekRelative(10)}
-            className="px-2 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 hover:text-white transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
+            className="px-1.5 sm:px-2 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 hover:text-white transition-colors flex items-center gap-1 shadow-sm cursor-pointer"
             title="Forward 10 seconds"
           >
             <span className="text-[10px] font-bold font-mono">10s</span>
@@ -157,7 +157,7 @@ export function EditorPlaybackControls({
           </button>
 
           {/* Volume Control */}
-          <div className="group/vol flex items-center ml-1">
+          <div className="group/vol flex items-center ml-0.5">
             <button
               type="button"
               onClick={toggleMute}
@@ -170,7 +170,7 @@ export function EditorPlaybackControls({
                 <Volume2 className="w-3.5 h-3.5 text-zinc-300 group-hover/vol:text-white" />
               )}
             </button>
-            <div className="flex items-center gap-1.5 w-0 opacity-0 group-hover/vol:w-24 group-hover/vol:opacity-100 overflow-hidden transition-all duration-200 ease-out pl-0.5 pr-1">
+            <div className="hidden sm:flex items-center gap-1.5 w-0 opacity-0 group-hover/vol:w-24 group-hover/vol:opacity-100 overflow-hidden transition-all duration-200 ease-out pl-0.5 pr-1">
               <input
                 type="range"
                 min={0}
@@ -188,8 +188,8 @@ export function EditorPlaybackControls({
           </div>
         </div>
 
-        {/* Time Indicator (Centered & Editable) */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-[12px] font-mono text-gray-500 bg-black/40 border border-white/10 px-2.5 py-0.5 rounded-lg shadow-sm">
+        {/* Time Indicator (Centered on desktop, inline on mobile) */}
+        <div className="sm:absolute sm:left-1/2 sm:-translate-x-1/2 flex items-center gap-1 text-[11px] sm:text-[12px] font-mono text-gray-400 bg-black/60 border border-white/10 px-2 py-0.5 rounded-lg shadow-sm shrink-0">
           {isEditingTime ? (
             <input
               type="text"

@@ -32,7 +32,11 @@ import {
   EditorTimeline,
   EditorExportPanel,
   EditorPlayerSkeleton,
+  EditorMobileBottomDock,
+  EditorMobileSheet,
+  EditorMobileUrlModal,
 } from '../components/editor';
+import type { MobileTab } from '../components/editor/EditorMobileBottomDock';
 import { useEditorMetadata } from '../hooks/editor/useEditorMetadata';
 import { useEditorPlayback } from '../hooks/editor/useEditorPlayback';
 
@@ -78,6 +82,11 @@ export default function ClipFlowEditor() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showCloudStorageModal, setShowCloudStorageModal] = useState(false);
   const [showCompanionModal, setShowCompanionModal] = useState(false);
+
+  // Mobile App Controls & Modals
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileUrlModalOpen, setIsMobileUrlModalOpen] = useState(false);
+  const [activeMobileTab, setActiveMobileTab] = useState<MobileTab>(null);
 
   const engineParam = searchParams.get('engine');
   const modeParam = searchParams.get('mode');
@@ -158,7 +167,7 @@ export default function ClipFlowEditor() {
     return initialSession?.metadata?.duration || 0;
   });
 
-  const isTrimEnabled = true;
+  const [isTrimEnabled, setIsTrimEnabled] = useState<boolean>(true);
   const [trimRange, setTrimRange] = useState<[number, number]>(() => {
     if (rawUrl && isTwitchLiveChannelUrl(rawUrl)) return [0, 60];
     if (initialTwitchSession && initialTwitchSession.trimRange) return initialTwitchSession.trimRange;
@@ -1113,7 +1122,7 @@ export default function ClipFlowEditor() {
   const isDraggingSplitter = isDraggingHSplitter || isDraggingVSplitter || isDraggingLSplitter;
 
   return (
-    <div className={`flex h-screen overflow-hidden bg-black text-[#f8fafc] selection:bg-purple-500/30 ${
+    <div className={`flex h-[100dvh] w-screen overflow-hidden bg-black text-[#f8fafc] selection:bg-purple-500/30 ${
       isDraggingVSplitter ? 'select-none cursor-col-resize' : isDraggingHSplitter ? 'select-none cursor-row-resize' : ''
     }`}>
       {/* ══ PERSISTENT LEFT SIDEBAR ══ */}
@@ -1126,6 +1135,8 @@ export default function ClipFlowEditor() {
         onLoadVideo={handleLoadVideo}
         isLoadingMeta={isLoadingMeta}
         currentVideoUrl={activeUrl}
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={() => setIsMobileMenuOpen(false)}
       />
 
       {/* ══ MAIN CONTENT AREA ══ */}
@@ -1135,11 +1146,15 @@ export default function ClipFlowEditor() {
           isLoadingMeta={isLoadingMeta}
           isProUser={isProUser}
           onOpenCompanionModal={() => setShowCompanionModal(true)}
+          onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+          onOpenMobileExport={() => setActiveMobileTab('export')}
+          onOpenMobileUrlModal={() => setIsMobileUrlModalOpen(true)}
+          isDownloading={isDownloading}
         />
 
         {/* Body Row */}
         <div className="flex-1 flex overflow-hidden min-h-0">
-          <main className="flex-1 flex flex-col overflow-y-auto min-w-0 p-4 gap-0">
+          <main className="flex-1 flex flex-col overflow-y-auto min-w-0 p-3 sm:p-4 gap-0 pb-20 md:pb-4">
             {isLoadingMeta && (
               <EditorPlayerSkeleton
                 videoHeight={videoHeight}
@@ -1265,7 +1280,7 @@ export default function ClipFlowEditor() {
                 {/* Horizontal Splitter */}
                 <div
                   onMouseDown={() => setIsDraggingHSplitter(true)}
-                  className="relative py-2.5 z-20 cursor-row-resize group select-none w-full flex items-center"
+                  className="hidden md:flex relative py-2.5 z-20 cursor-row-resize group select-none w-full items-center"
                   title="Drag up or down to adjust video and timeline height"
                 >
                   <div className={`w-full h-[2px] transition-all ${
@@ -1299,7 +1314,7 @@ export default function ClipFlowEditor() {
           {/* Vertical Splitter */}
           <div
             onMouseDown={() => setIsDraggingVSplitter(true)}
-            className={`w-2.5 hover:w-2.5 -mx-1 z-30 flex items-center justify-center cursor-col-resize group transition-colors select-none ${
+            className={`hidden md:flex w-2.5 hover:w-2.5 -mx-1 z-30 items-center justify-center cursor-col-resize group transition-colors select-none ${
               isDraggingVSplitter ? 'bg-white/20' : 'bg-transparent hover:bg-white/10'
             }`}
             title="Drag left or right to resize right panel"
@@ -1309,43 +1324,103 @@ export default function ClipFlowEditor() {
             }`} />
           </div>
 
-          <EditorExportPanel
-            rightPanelWidth={rightPanelWidth}
-            metadata={metadata}
-            currentTime={currentTime}
-            previewImageMode={previewImageMode}
-            setPreviewImageMode={setPreviewImageMode}
-            handleDownloadImage={handleDownloadImage}
-            isDownloadingImage={isDownloadingImage}
-            downloadSuccess={downloadSuccess}
-            aspectRatio={aspectRatio}
-            applyAspectRatio={applyAspectRatio}
-            fitMode={fitMode}
-            setFitMode={setFitMode}
-            centerCropBox={centerCropBox}
-            downloadFormat={downloadFormat}
-            setDownloadFormat={setDownloadFormat}
-            downloadQuality={downloadQuality}
-            handleSetDownloadQuality={handleSetDownloadQuality}
-            downloadAudioBitrate={downloadAudioBitrate}
-            setDownloadAudioBitrate={setDownloadAudioBitrate}
-            captionFormat={captionFormat}
-            setCaptionFormat={setCaptionFormat}
-            captionLang={captionLang}
-            setCaptionLang={setCaptionLang}
-            qualityOptions={effectiveQualityOptions}
-            customFileName={customFileName}
-            setCustomFileName={setCustomFileName}
-            statusMessage={statusMessage}
-            downloadStatus={downloadStatus}
-            isDownloading={isDownloading}
-            handleExportDownload={handleExportDownload}
-            exportMode={exportMode}
-            isPro={isPro}
-            estimatedBytes={estimatedBytes}
-          />
+          {/* Desktop Right Export Panel */}
+          <div className="hidden md:flex h-full">
+            <EditorExportPanel
+              rightPanelWidth={rightPanelWidth}
+              metadata={metadata}
+              currentTime={currentTime}
+              previewImageMode={previewImageMode}
+              setPreviewImageMode={setPreviewImageMode}
+              handleDownloadImage={handleDownloadImage}
+              isDownloadingImage={isDownloadingImage}
+              downloadSuccess={downloadSuccess}
+              aspectRatio={aspectRatio}
+              applyAspectRatio={applyAspectRatio}
+              fitMode={fitMode}
+              setFitMode={setFitMode}
+              centerCropBox={centerCropBox}
+              downloadFormat={downloadFormat}
+              setDownloadFormat={setDownloadFormat}
+              downloadQuality={downloadQuality}
+              handleSetDownloadQuality={handleSetDownloadQuality}
+              downloadAudioBitrate={downloadAudioBitrate}
+              setDownloadAudioBitrate={setDownloadAudioBitrate}
+              captionFormat={captionFormat}
+              setCaptionFormat={setCaptionFormat}
+              captionLang={captionLang}
+              setCaptionLang={setCaptionLang}
+              qualityOptions={effectiveQualityOptions}
+              customFileName={customFileName}
+              setCustomFileName={setCustomFileName}
+              statusMessage={statusMessage}
+              downloadStatus={downloadStatus}
+              isDownloading={isDownloading}
+              handleExportDownload={handleExportDownload}
+              exportMode={exportMode}
+              isPro={isPro}
+              estimatedBytes={estimatedBytes}
+            />
+          </div>
         </div>
       </div>
+
+      {/* Mobile Native Bottom App Dock */}
+      <EditorMobileBottomDock
+        activeTab={activeMobileTab}
+        onSelectTab={setActiveMobileTab}
+        isTrimEnabled={isTrimEnabled}
+        onToggleTrim={() => setIsTrimEnabled((prev) => !prev)}
+        isDownloading={isDownloading}
+        downloadStatus={downloadStatus}
+        hasMetadata={Boolean(metadata && !isLoadingMeta && !errorMeta)}
+      />
+
+      {/* Mobile Slide-Up Drawer / Bottom Sheet */}
+      <EditorMobileSheet
+        activeTab={activeMobileTab}
+        onClose={() => setActiveMobileTab(null)}
+        aspectRatio={aspectRatio}
+        applyAspectRatio={applyAspectRatio}
+        fitMode={fitMode}
+        setFitMode={setFitMode}
+        centerCropBox={centerCropBox}
+        downloadFormat={downloadFormat}
+        setDownloadFormat={setDownloadFormat}
+        downloadQuality={downloadQuality}
+        handleSetDownloadQuality={handleSetDownloadQuality}
+        downloadAudioBitrate={downloadAudioBitrate}
+        setDownloadAudioBitrate={setDownloadAudioBitrate}
+        captionFormat={captionFormat}
+        setCaptionFormat={setCaptionFormat}
+        captionLang={captionLang}
+        setCaptionLang={setCaptionLang}
+        qualityOptions={effectiveQualityOptions}
+        previewImageMode={previewImageMode}
+        setPreviewImageMode={setPreviewImageMode}
+        handleDownloadImage={handleDownloadImage}
+        isDownloadingImage={isDownloadingImage}
+        downloadSuccess={downloadSuccess}
+        currentTime={currentTime}
+        metadata={metadata}
+        customFileName={customFileName}
+        setCustomFileName={setCustomFileName}
+        statusMessage={statusMessage}
+        downloadStatus={downloadStatus}
+        isDownloading={isDownloading}
+        handleExportDownload={handleExportDownload}
+        exportDuration={exportDuration}
+        estimatedBytes={estimatedBytes}
+      />
+
+      {/* Mobile Quick URL Switcher Modal */}
+      <EditorMobileUrlModal
+        isOpen={isMobileUrlModalOpen}
+        onClose={() => setIsMobileUrlModalOpen(false)}
+        onLoadVideo={handleLoadVideo}
+        isLoadingMeta={isLoadingMeta}
+        currentUrl={activeUrl}
+      />
 
       {/* Modals */}
       <AuthModal

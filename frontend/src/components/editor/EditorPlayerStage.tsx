@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react';
+import { Loader2, Play } from 'lucide-react';
 import type { YouTubePlayer } from 'react-youtube';
 import { CropFrameOverlay, type CropBox } from '../CropFrameOverlay';
 import {
@@ -83,8 +83,8 @@ export function EditorPlayerStage(props: EditorPlayerStageProps) {
   return (
     <div
       ref={videoContainerRef as any}
-      style={{ height: `${videoHeight}px` }}
-      className="w-full flex flex-col items-center justify-center bg-black/70 rounded-2xl border border-white/[0.07] overflow-hidden relative p-3 shadow-inner shrink-0 transition-[height] duration-75 select-none"
+      style={{ '--desktop-height': `${videoHeight}px` } as React.CSSProperties}
+      className="w-full flex flex-col items-center justify-center bg-black/70 rounded-xl sm:rounded-2xl border border-white/[0.07] overflow-hidden relative p-1.5 sm:p-3 shadow-inner shrink-0 select-none h-[33vh] sm:h-[38vh] md:h-[var(--desktop-height)] transition-[height] duration-75"
     >
       <div
         onClick={(e) => {
@@ -203,6 +203,15 @@ export function EditorPlayerStage(props: EditorPlayerStageProps) {
                 seekOriginTimeRef={props.seekOriginTimeRef}
                 lastSeekTimeRef={props.lastSeekTimeRef}
               />
+            )}
+
+            {/* Mobile Play Indicator Overlay when paused */}
+            {!props.isPlaying && !isVideoBuffering && (
+              <div className="absolute inset-0 z-15 md:hidden flex items-center justify-center pointer-events-none">
+                <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-2xl">
+                  <Play className="w-5 h-5 fill-white ml-0.5" />
+                </div>
+              </div>
             )}
 
             {/* Video Buffering Overlay */}
