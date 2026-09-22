@@ -169,13 +169,20 @@ export class TwitchFFmpegExporterService {
       const audioArgs: string[] = [
         `"${ffmpegBin}"`,
         '-y',
+        '-fflags +genpts+discardcorrupt',
         `-ss ${trimStart}`,
         `-i "${hlsStreamUrl}"`,
       ];
       if (duration !== undefined) {
         audioArgs.push(`-t ${duration}`);
       }
-      audioArgs.push('-vn', `-c:a ${audioCodec}`, `-b:a ${safeAudioBitrate}`, `"${outputPath}"`);
+      audioArgs.push(
+        '-vn',
+        `-c:a ${audioCodec}`,
+        `-b:a ${safeAudioBitrate}`,
+        '-avoid_negative_ts make_zero',
+        `"${outputPath}"`
+      );
 
       console.log(`[Twitch FFmpeg Exporter] Executing audio extraction:\n${audioArgs.join(' ')}`);
       await execAsync(audioArgs.join(' '));
@@ -197,6 +204,7 @@ export class TwitchFFmpegExporterService {
       const transcodeCropArgs: string[] = [
         `"${ffmpegBin}"`,
         '-y',
+        '-fflags +genpts+discardcorrupt',
         `-ss ${trimStart}`,
         `-i "${hlsStreamUrl}"`,
       ];
@@ -212,6 +220,7 @@ export class TwitchFFmpegExporterService {
         `-b:a ${safeAudioBitrate}`,
         '-map 0:v:0',
         '-map 0:a:0?',
+        '-avoid_negative_ts make_zero',
         '-movflags +faststart',
         `"${outputPath}"`
       );
@@ -236,6 +245,7 @@ export class TwitchFFmpegExporterService {
         const fastCopyArgs: string[] = [
           `"${ffmpegBin}"`,
           '-y',
+          '-fflags +genpts+discardcorrupt',
           `-ss ${trimStart}`,
           `-i "${hlsStreamUrl}"`,
         ];
@@ -246,6 +256,7 @@ export class TwitchFFmpegExporterService {
           '-c copy',
           '-map 0:v:0',
           '-map 0:a:0?',
+          '-avoid_negative_ts make_zero',
           '-movflags +faststart',
           '-bsf:a aac_adtstoasc',
           `"${outputPath}"`
@@ -275,6 +286,7 @@ export class TwitchFFmpegExporterService {
     const transcodeArgs: string[] = [
       `"${ffmpegBin}"`,
       '-y',
+      '-fflags +genpts+discardcorrupt',
       `-ss ${trimStart}`,
       `-i "${hlsStreamUrl}"`,
     ];
@@ -292,6 +304,7 @@ export class TwitchFFmpegExporterService {
       `-b:a ${safeAudioBitrate}`,
       '-map 0:v:0',
       '-map 0:a:0?',
+      '-avoid_negative_ts make_zero',
       '-movflags +faststart',
       `"${outputPath}"`
     );

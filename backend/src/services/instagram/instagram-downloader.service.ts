@@ -12,6 +12,7 @@ import fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getFFmpegAspectFilter } from '../video-crop.service.js';
+import { getFFmpegLocationFlag } from '../../utils/binary-resolver.util.js';
 
 function formatSecondsToTime(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
@@ -77,9 +78,10 @@ export class InstagramDownloaderService {
 
     const rawTarget = needsCrop ? tempRawFile : finalFile;
 
+    const ffmpegLocFlag = getFFmpegLocationFlag(ffmpegBin);
     const ytDlpArgs: string[] = [
       `"${ytDlpBin}"`,
-      `--ffmpeg-location "${path.dirname(ffmpegBin)}"`,
+      ...(ffmpegLocFlag ? [ffmpegLocFlag] : []),
       '--js-runtimes node',
       `--add-header "User-Agent: ${this.USER_AGENT}"`,
       '--no-warnings',

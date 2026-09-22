@@ -12,6 +12,7 @@ import fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getFFmpegAspectFilter } from '../video-crop.service.js';
+import { getFFmpegLocationFlag } from '../../utils/binary-resolver.util.js';
 import { TwitterMetadataService } from './twitter-metadata.service.js';
 
 function formatSecondsToTime(seconds: number): string {
@@ -83,9 +84,10 @@ export class TwitterDownloaderService {
       }
     } catch (_) {}
 
+    const ffmpegLocFlag = getFFmpegLocationFlag(ffmpegBin);
     const ytDlpArgs: string[] = [
       `"${ytDlpBin}"`,
-      `--ffmpeg-location "${path.dirname(ffmpegBin)}"`,
+      ...(ffmpegLocFlag ? [ffmpegLocFlag] : []),
       '--js-runtimes node',
       '--no-playlist',
       '--no-warnings',

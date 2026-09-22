@@ -292,9 +292,38 @@ export default function ClipFlowEditor() {
   const {
     twitchHlsUrl,
     isTwitchLiveChannel,
+    qualities: twitchQualities,
   } = useTwitchPreview(isTwitch, activeUrl, metadata, isProUser, currentTwitchPreviewQuality);
 
   const isLiveChannelUrl = isTwitchLiveChannel;
+
+  // Real multi-quality tiers for Twitch vs standard platforms
+  const effectivePreviewQualities = useMemo(() => {
+    if (isTwitch && twitchQualities && twitchQualities.length > 0) {
+      return twitchQualities.map((q) => ({
+        id: q.id,
+        label: q.label,
+        height: q.height,
+        url: q.proxiedUrl || q.url,
+        isAvailable: true,
+        hasAudio: true,
+      }));
+    }
+    return previewQualities;
+  }, [isTwitch, twitchQualities, previewQualities]);
+
+  const effectiveQualityOptions = useMemo(() => {
+    if (isTwitch && twitchQualities && twitchQualities.length > 0) {
+      return twitchQualities.filter(q => q.height > 0).map((q) => ({
+        label: q.label,
+        height: q.height,
+        format_id: q.id,
+        tbr: q.bandwidth,
+        isNative: true,
+      }));
+    }
+    return qualityOptions;
+  }, [isTwitch, twitchQualities, qualityOptions]);
 
   // Thumbnail vs Frame Mode
   const [previewImageMode, setPreviewImageMode] = useState<'thumbnail' | 'frame'>('thumbnail');
@@ -326,21 +355,21 @@ export default function ClipFlowEditor() {
   const currentQualityLabel = useMemo(() => {
     const activeId = selectedQualityId || downloadQuality;
     if (activeId) {
-      const match = previewQualities.find(q => q.id === activeId || q.id === `${activeId}p` || q.label.toLowerCase().startsWith(activeId.toLowerCase()));
+      const match = effectivePreviewQualities.find(q => q.id === activeId || q.id === `${activeId}p` || q.label.toLowerCase().startsWith(activeId.toLowerCase()));
       if (match) return match.label;
       return activeId;
     }
     if (selectedPreviewQualityUrl) {
-      const match = previewQualities.find(q => q.url === selectedPreviewQualityUrl);
+      const match = effectivePreviewQualities.find(q => q.url === selectedPreviewQualityUrl);
       if (match) return match.label;
     }
-    if (defaultPreviewStreamUrl && previewQualities.length > 0) {
-      const exactMatch = previewQualities.find(q => q.url === defaultPreviewStreamUrl && q.isAvailable);
+    if (defaultPreviewStreamUrl && effectivePreviewQualities.length > 0) {
+      const exactMatch = effectivePreviewQualities.find(q => q.url === defaultPreviewStreamUrl && q.isAvailable);
       if (exactMatch) return exactMatch.label;
-      return previewQualities.find(q => q.id === '1080p')?.label || previewQualities.find(q => q.id === '720p')?.label || previewQualities[0].label;
+      return effectivePreviewQualities.find(q => q.id === '1080p')?.label || effectivePreviewQualities.find(q => q.id === '720p')?.label || effectivePreviewQualities[0].label;
     }
     return '1080p (Full HD)';
-  }, [selectedQualityId, downloadQuality, selectedPreviewQualityUrl, previewQualities, defaultPreviewStreamUrl]);
+  }, [selectedQualityId, downloadQuality, selectedPreviewQualityUrl, effectivePreviewQualities, defaultPreviewStreamUrl]);
 
   const handleSelectPreviewQuality = (qualityItem: { id: string; url: string; label: string }) => {
     const wasPlaying = isPlaying;
@@ -366,7 +395,7 @@ export default function ClipFlowEditor() {
     if (cleanNum) {
       const qId = `${cleanNum}p`;
       setSelectedQualityId(qId);
-      const match = previewQualities.find((q) => q.height === cleanNum);
+      const match = effectivePreviewQualities.find((q) => q.height === cleanNum);
       if (match) {
         handleSelectPreviewQuality(match);
       }
@@ -376,13 +405,13 @@ export default function ClipFlowEditor() {
   const rawPreviewSrc = selectedPreviewQualityUrl || defaultPreviewStreamUrl || metadata?.direct_stream_url || metadata?.url || '';
 
   const activeVideoSrc = useMemo(() => {
-    if (isTwitch && twitchHlsUrl) return twitchHlsUrl;
+    if (isTwitch) return selectedPreviewQualityUrl || twitchHlsUrl;
     if (!rawPreviewSrc) return '';
     if (isTwitter || isInstagram || useProxyFallback || rawPreviewSrc.includes('twimg.com') || rawPreviewSrc.includes('cdninstagram.com') || rawPreviewSrc.includes('instagram.com')) {
       return `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(rawPreviewSrc)}`;
     }
     return rawPreviewSrc;
-  }, [rawPreviewSrc, isTwitter, isInstagram, useProxyFallback, isTwitch, twitchHlsUrl]);
+  }, [rawPreviewSrc, isTwitter, isInstagram, useProxyFallback, isTwitch, twitchHlsUrl, selectedPreviewQualityUrl]);
 
   const activeVideoHasAudio = useMemo(() => {
     if (!metadata || !rawPreviewSrc) return true;
@@ -891,23 +920,86 @@ export default function ClipFlowEditor() {
         return;
       }
 
-      // 1. Twitch Browser-Side Export Pipeline
+      // 1. Twitch Browser-Side Export Pipeline (with Quality Selection & Server Fallback)
       if (isTwitch && twitchHlsUrl) {
         setStatusMessage('⚡ Initializing browser video engine...');
-        await exportTwitchClipInBrowser({
-          manifestUrl: twitchHlsUrl,
-          trimStart: effectiveTrimStart,
-          trimEnd: effectiveTrimEnd,
-          customFileName: customFileName || metadata?.title || 'Twitch_Clip',
-          format: effectiveFormat,
-          quality: downloadQuality,
-          aspectRatio: aspectRatio === '16:9' ? undefined : aspectRatio,
-          fitMode: fitMode,
-          cropPosition: cropPosition,
-          cropBox: aspectRatio === 'custom' ? cropBox : undefined,
-          audioBitrate: downloadAudioBitrate,
-          onProgress: (msg) => setStatusMessage(msg),
-        });
+
+        // Find exact variant URL matching downloadQuality (or audio_only for audio exports)
+        let targetManifest = twitchHlsUrl;
+        const isAudioExport = effectiveFormat === 'mp3' || (effectiveFormat as string) === 'wav' || (effectiveFormat as string) === 'aac';
+        if (isAudioExport) {
+          const audioTier = twitchQualities.find((q) => q.id === 'audio_only');
+          if (audioTier) {
+            targetManifest = audioTier.proxiedUrl || audioTier.url;
+            console.log('[Twitch Export] Using audio_only stream variant for fast audio export:', targetManifest);
+          }
+        } else if (downloadQuality) {
+          const cleanQ = downloadQuality.toLowerCase().replace(/[^\d]/g, '');
+          const matchTier = twitchQualities.find((q) => q.id === downloadQuality || (cleanQ && q.height === Number(cleanQ)));
+          if (matchTier) {
+            targetManifest = matchTier.proxiedUrl || matchTier.url;
+            console.log(`[Twitch Export] Using quality-matched stream variant (${downloadQuality}):`, targetManifest);
+          }
+        }
+
+        try {
+          await exportTwitchClipInBrowser({
+            manifestUrl: targetManifest,
+            trimStart: effectiveTrimStart,
+            trimEnd: effectiveTrimEnd,
+            customFileName: customFileName || metadata?.title || 'Twitch_Clip',
+            format: effectiveFormat,
+            quality: downloadQuality,
+            aspectRatio: aspectRatio === '16:9' ? undefined : aspectRatio,
+            fitMode: fitMode,
+            cropPosition: cropPosition,
+            cropBox: aspectRatio === 'custom' ? cropBox : undefined,
+            audioBitrate: downloadAudioBitrate,
+            onProgress: (msg) => setStatusMessage(msg),
+          });
+        } catch (browserTwitchErr: any) {
+          console.warn('[Twitch Export] In-browser export failed, falling back to server export engine:', browserTwitchErr);
+          setStatusMessage('⚡ In-browser render failed. Falling back to high-speed cloud renderer...');
+
+          const res = await fetch(`${BACKEND_URL}/api/video/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: activeUrl,
+              format: effectiveFormat,
+              quality: downloadQuality,
+              audioBitrate: downloadAudioBitrate,
+              trimStart: effectiveTrimStart,
+              trimEnd: effectiveTrimEnd,
+              aspectRatio: aspectRatio === '16:9' ? undefined : aspectRatio,
+              fitMode,
+              cropPosition,
+              cropBox: aspectRatio === 'custom' ? cropBox : undefined,
+              customFileName: customFileName || metadata?.title || 'Twitch_Clip',
+              mode: 'server',
+            }),
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Server export failed (${res.status})`);
+          }
+
+          const data = await res.json();
+          if (data.downloadUrl) {
+            const fileRes = await fetch(`${BACKEND_URL}${data.downloadUrl}`);
+            if (!fileRes.ok) throw new Error('Failed to retrieve clip from server');
+            const blob = await fileRes.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = data.fileName || `${customFileName || 'twitch_clip'}.${effectiveFormat}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+          }
+        }
 
         setDownloadStatus('success');
         setStatusMessage('Clip generated & downloaded directly to your computer!');
@@ -927,24 +1019,69 @@ export default function ClipFlowEditor() {
         return;
       }
 
-      // 2. Client-Side FFmpeg In-Browser Export (YouTube, Instagram, Twitter, etc.)
+      // 2. Client-Side FFmpeg In-Browser Export (YouTube, Instagram, Twitter, etc.) with Automatic Cloud Fallback
       setStatusMessage('🚀 Initializing in-browser render engine...');
 
-      const exportResult = await ClientVideoExportEngine.exportClip({
-        metadata,
-        trimStart: effectiveTrimStart,
-        trimEnd: effectiveTrimEnd,
-        format: effectiveFormat,
-        quality: downloadQuality,
-        audioQuality: downloadAudioBitrate,
-        aspectRatio: aspectRatio === '16:9' ? undefined : aspectRatio,
-        cropBox: aspectRatio === 'custom' ? cropBox : undefined,
-        fitMode: fitMode,
-        customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
-        onProgress: (phase) => setStatusMessage(phase),
-      });
+      try {
+        const exportResult = await ClientVideoExportEngine.exportClip({
+          metadata,
+          trimStart: effectiveTrimStart,
+          trimEnd: effectiveTrimEnd,
+          format: effectiveFormat,
+          quality: downloadQuality,
+          audioQuality: downloadAudioBitrate,
+          aspectRatio: aspectRatio === '16:9' ? undefined : aspectRatio,
+          cropBox: aspectRatio === 'custom' ? cropBox : undefined,
+          fitMode: fitMode,
+          customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
+          onProgress: (phase) => setStatusMessage(phase),
+        });
 
-      console.log('[ClipFlow Studio EXPORT SUCCESS]', exportResult);
+        console.log('[ClipFlow Studio EXPORT SUCCESS]', exportResult);
+      } catch (browserExportErr: any) {
+        console.warn('[ClipFlow Editor] In-browser export engine encountered error, falling back to server engine:', browserExportErr);
+        setStatusMessage('⚡ In-browser render exceeded limit. Processing with cloud engine...');
+
+        const res = await fetch(`${BACKEND_URL}/api/video/download`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: activeUrl,
+            format: effectiveFormat,
+            quality: downloadQuality,
+            audioBitrate: downloadAudioBitrate,
+            trimStart: effectiveTrimStart,
+            trimEnd: effectiveTrimEnd,
+            aspectRatio: aspectRatio === '16:9' ? undefined : aspectRatio,
+            fitMode,
+            cropPosition,
+            cropBox: aspectRatio === 'custom' ? cropBox : undefined,
+            customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
+            mode: 'server',
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Server export failed (${res.status})`);
+        }
+
+        const data = await res.json();
+        if (data.downloadUrl) {
+          const fileRes = await fetch(`${BACKEND_URL}${data.downloadUrl}`);
+          if (!fileRes.ok) throw new Error('Failed to retrieve clip from server');
+          const blob = await fileRes.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = data.fileName || `${customFileName || 'video_clip'}.${effectiveFormat}`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        }
+      }
+
       setDownloadStatus('success');
       setStatusMessage('🎉 Clip processed and downloaded successfully!');
 
@@ -1009,7 +1146,7 @@ export default function ClipFlowEditor() {
     else if (downloadAudioBitrate === '0') kbps = 256;
     estimatedBytes = (kbps * 1000 / 8) * exportDuration;
   } else {
-    const selectedQualityObj = qualityOptions.find(q => q.label === downloadQuality);
+    const selectedQualityObj = effectiveQualityOptions.find(q => q.label === downloadQuality);
     const height = selectedQualityObj?.height || parseInt((downloadQuality || '').replace(/[^\d]/g, ''), 10) || 1080;
     let baseKbps = 3800;
     if (height >= 2160) baseKbps = 20000;
@@ -1175,7 +1312,7 @@ export default function ClipFlowEditor() {
                   lastSeekTimeRef={lastSeekTimeRef}
                   setCurrentTime={setCurrentTime}
                   isYouTube={isYouTube}
-                  previewQualities={previewQualities}
+                  previewQualities={effectivePreviewQualities}
                   currentQualityLabel={currentQualityLabel}
                   selectedQualityId={selectedQualityId}
                   selectedPreviewQualityUrl={selectedPreviewQualityUrl}
@@ -1254,7 +1391,7 @@ export default function ClipFlowEditor() {
             setCaptionFormat={setCaptionFormat}
             captionLang={captionLang}
             setCaptionLang={setCaptionLang}
-            qualityOptions={qualityOptions}
+            qualityOptions={effectiveQualityOptions}
             customFileName={customFileName}
             setCustomFileName={setCustomFileName}
             statusMessage={statusMessage}

@@ -225,6 +225,7 @@ self.onmessage = async (e: MessageEvent) => {
       ];
 
       if (isAudio) {
+        args.push('-avoid_negative_ts', 'make_zero');
         if (format === 'wav') {
           args.push('-vn', '-c:a', 'pcm_s16le', internalOutput);
         } else if (format === 'aac') {
@@ -244,6 +245,9 @@ self.onmessage = async (e: MessageEvent) => {
           '-max_muxing_queue_size', '1024',
           '-c:a', 'aac',
           '-b:a', safeAudioBitrate,
+          '-map', '0:v:0',
+          '-map', '0:a:0?',
+          '-avoid_negative_ts', 'make_zero',
           '-movflags', '+faststart',
           internalOutput
         );
