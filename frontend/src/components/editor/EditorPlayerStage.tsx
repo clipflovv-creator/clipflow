@@ -88,6 +88,7 @@ export function EditorPlayerStage(props: EditorPlayerStageProps) {
     >
       <div
         onClick={(e) => {
+          // Desktop: only toggle for 16:9 or pad mode, and only on the direct target
           if (aspectRatio === '16:9' || isPadMode) {
             if (!youtubeId || e.target === e.currentTarget || e.target === videoCanvasRef.current) {
               togglePlay();
@@ -205,14 +206,18 @@ export function EditorPlayerStage(props: EditorPlayerStageProps) {
               />
             )}
 
-            {/* Mobile Play Indicator Overlay when paused */}
-            {!props.isPlaying && !isVideoBuffering && (
-              <div className="absolute inset-0 z-15 md:hidden flex items-center justify-center pointer-events-none">
-                <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-2xl">
+            {/* Mobile tap zone — always active on mobile for play/pause toggle */}
+            <div
+              className="absolute inset-0 z-[25] md:hidden flex items-center justify-center cursor-pointer"
+              onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+            >
+              {/* Show play icon when paused, nothing visible when playing (tap still works) */}
+              {!props.isPlaying && !isVideoBuffering && (
+                <div className="w-12 h-12 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-2xl pointer-events-none">
                   <Play className="w-5 h-5 fill-white ml-0.5" />
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Video Buffering Overlay */}
             {isVideoBuffering && (

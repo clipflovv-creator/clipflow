@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import * as Slider from '@radix-ui/react-slider';
 import { Clock } from 'lucide-react';
 
@@ -36,17 +37,85 @@ function formatTime(seconds: number, includeDecimals: boolean = false): string {
   return includeDecimals ? `${main}.${ms}` : main;
 }
 
-function parseTime(timeStr: string): number {
-  if (!timeStr) return 0;
-  const cleanStr = String(timeStr).trim();
-  const parts = cleanStr.split(':').map(Number);
-  if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
-    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+function parseTime(timeStr: string): number | null {
+  if (!timeStr || !timeStr.trim()) return null;
+  const cleanStr = timeStr.trim();
+  const parts = cleanStr.split(':');
+
+  if (parts.length === 3) {
+    const h = parseFloat(parts[0]);
+    const m = parseFloat(parts[1]);
+    const s = parts[2] === '' ? 0 : parseFloat(parts[2]);
+    if (!isNaN(h) && !isNaN(m) && !isNaN(s) && h >= 0 && m >= 0 && s >= 0 && m < 60 && s < 60) {
+      return h * 3600 + m * 60 + s;
+    }
+  } else if (parts.length === 2) {
+    const m = parseFloat(parts[0]);
+    const s = parts[1] === '' ? 0 : parseFloat(parts[1]);
+    if (!isNaN(m) && !isNaN(s) && m >= 0 && s >= 0 && s < 60) {
+      return m * 60 + s;
+    }
+  } else if (parts.length === 1) {
+    const s = parseFloat(parts[0]);
+    if (!isNaN(s) && s >= 0) {
+      return s;
+    }
   }
-  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-    return parts[0] * 60 + parts[1];
-  }
-  return parseFloat(cleanStr) || 0;
+  return null;
+}
+
+interface TimeBoxInputProps {
+  value: number;
+  includeDecimals: boolean;
+  onCommit: (seconds: number) => void;
+  isValid: (seconds: number) => boolean;
+  ariaLabel: string;
+}
+
+function TimeBoxInput({
+  value,
+  includeDecimals,
+  onCommit,
+  isValid,
+  ariaLabel,
+}: TimeBoxInputProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [rawText, setRawText] = useState('');
+
+  const formattedValue = formatTime(value, includeDecimals);
+
+  const handleCommit = () => {
+    setIsEditing(false);
+    const parsed = parseTime(rawText);
+    if (parsed !== null && !isNaN(parsed) && isValid(parsed)) {
+      onCommit(parsed);
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      aria-label={ariaLabel}
+      value={isEditing ? rawText : formattedValue}
+      onFocus={() => {
+        setIsEditing(true);
+        setRawText(formattedValue);
+      }}
+      onChange={(e) => {
+        setRawText(e.target.value);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          (e.target as HTMLInputElement).blur();
+        } else if (e.key === 'Escape') {
+          setIsEditing(false);
+          setRawText(formattedValue);
+        }
+      }}
+      onBlur={handleCommit}
+      className="w-16 bg-black/50 border border-white/10 rounded-lg px-1.5 py-1 text-center text-zinc-200 font-bold focus:outline-none focus:border-zinc-400 text-[11px]"
+    />
+  );
 }
 
 export function EditorTimeline({
@@ -229,31 +298,27 @@ export function EditorTimeline({
 
         {isTrimEnabled ? (
           <div className="flex items-center gap-1.5 text-xs font-mono">
-            <input
-              type="text"
-              value={formatTime(trimRange[0], effectiveDuration <= 15 || trimRange[0] % 1 !== 0)}
-              onChange={(e) => {
-                const val = parseTime(e.target.value);
-                if (!isNaN(val) && val < trimRange[1]) {
-                  setTrimRange([val, trimRange[1]]);
-                  pauseAndSeek(val);
-                }
+            <TimeBoxInput
+              ariaLabel="Trim Start Time"
+              value={trimRange[0]}
+              includeDecimals={effectiveDuration <= 15 || trimRange[0] % 1 !== 0}
+              isValid={(val) => val >= 0 && val < trimRange[1]}
+              onCommit={(val) => {
+                setTrimRange([val, trimRange[1]]);
+                pauseAndSeek(val);
               }}
-              className="w-16 bg-black/50 border border-white/10 rounded-lg px-1.5 py-1 text-center text-zinc-200 font-bold focus:outline-none focus:border-zinc-400 text-[11px]"
             />
             <span className="text-gray-500">-</span>
-            <input
-              type="text"
-              value={formatTime(trimRange[1], effectiveDuration <= 15 || trimRange[1] % 1 !== 0)}
-              onChange={(e) => {
-                const val = parseTime(e.target.value);
-                if (!isNaN(val) && val > trimRange[0]) {
-                  const endVal = Math.min(effectiveDuration > 0 ? effectiveDuration : 9999, val);
-                  setTrimRange([trimRange[0], endVal]);
-                  pauseAndSeek(trimRange[0]);
-                }
+            <TimeBoxInput
+              ariaLabel="Trim End Time"
+              value={trimRange[1]}
+              includeDecimals={effectiveDuration <= 15 || trimRange[1] % 1 !== 0}
+              isValid={(val) => val > trimRange[0] && val <= (effectiveDuration > 0 ? effectiveDuration : 9999)}
+              onCommit={(val) => {
+                const endVal = Math.min(effectiveDuration > 0 ? effectiveDuration : 9999, val);
+                setTrimRange([trimRange[0], endVal]);
+                pauseAndSeek(trimRange[0]);
               }}
-              className="w-16 bg-black/50 border border-white/10 rounded-lg px-1.5 py-1 text-center text-zinc-200 font-bold focus:outline-none focus:border-zinc-400 text-[11px]"
             />
           </div>
         ) : (
