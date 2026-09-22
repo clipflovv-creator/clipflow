@@ -123,3 +123,40 @@ body {
   background: rgba(30, 41, 59, 0.7);
   border-color: rgba(255, 255, 255, 0.15);
 }
+
+/* YouTube-style grey moving skeleton shimmer */
+@keyframes yt-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.yt-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(255, 255, 255, 0.07);
+}
+
+.yt-skeleton::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.07) 35%,
+    rgba(255, 255, 255, 0.14) 50%,
+    rgba(255, 255, 255, 0.07) 65%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: yt-shimmer 1.6s ease-in-out infinite;
+  content: '';
+  pointer-events: none;
+}
+

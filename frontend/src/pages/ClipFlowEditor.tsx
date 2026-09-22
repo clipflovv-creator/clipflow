@@ -1144,7 +1144,6 @@ export default function ClipFlowEditor() {
             {isLoadingMeta && (
               <EditorPlayerSkeleton
                 videoHeight={videoHeight}
-                platform={platformInfo.platform}
               />
             )}
 
