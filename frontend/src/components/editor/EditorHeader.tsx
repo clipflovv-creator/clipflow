@@ -1,4 +1,4 @@
-import { HardDrive, Menu, ArrowLeft, Download, Link2 } from 'lucide-react';
+import { HardDrive, Menu, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface EditorHeaderProps {
@@ -7,9 +7,6 @@ interface EditorHeaderProps {
   isProUser: boolean;
   onOpenCompanionModal: () => void;
   onOpenMobileMenu?: () => void;
-  onOpenMobileExport?: () => void;
-  onOpenMobileUrlModal?: () => void;
-  isDownloading?: boolean;
 }
 
 export function EditorHeader({
@@ -18,9 +15,6 @@ export function EditorHeader({
   isProUser,
   onOpenCompanionModal,
   onOpenMobileMenu,
-  onOpenMobileExport,
-  onOpenMobileUrlModal,
-  isDownloading = false,
 }: EditorHeaderProps) {
   const navigate = useNavigate();
 
@@ -48,28 +42,36 @@ export function EditorHeader({
   return (
     <>
       {/* ══ MOBILE NATIVE APP BAR (< md) ══ */}
-      <header className="h-[52px] flex md:hidden items-center justify-between px-3 border-b border-white/[0.08] bg-[#09090c]/95 backdrop-blur-xl shrink-0 gap-2 select-none z-30">
-        {/* Left: Back/Home & Platform */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={() => navigate('/')}
-            className="p-1.5 -ml-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-            title="Back to Home"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <img src="/logo.ico" alt="ClipFlow" className="w-5 h-5 object-contain" />
-          {badge && (
-            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${badge.color}`}>
-              {badge.label}
-            </span>
-          )}
-        </div>
+      {/* Layout: [Back] [Menu] [Logo] [Title — grows] [Platform badge] */}
+      <header className="h-[52px] flex md:hidden items-center px-2 border-b border-white/[0.08] bg-[#09090c]/95 backdrop-blur-xl shrink-0 gap-1.5 select-none z-30">
 
-        {/* Center: Video Title */}
-        <div className="flex-1 min-w-0 text-center px-1">
+        {/* Back */}
+        <button
+          onClick={() => navigate('/')}
+          className="p-1.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all shrink-0"
+          title="Back to Home"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+
+        {/* Menu (3-bar) */}
+        {onOpenMobileMenu && (
+          <button
+            onClick={onOpenMobileMenu}
+            className="p-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all shrink-0"
+            title="Open Menu"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* Logo */}
+        <img src="/logo.ico" alt="ClipFlow" className="w-5 h-5 object-contain shrink-0" />
+
+        {/* Title — grows to fill space */}
+        <div className="flex-1 min-w-0">
           {isLoadingMeta ? (
-            <div className="w-28 h-3.5 mx-auto rounded-md yt-skeleton" />
+            <div className="w-28 h-3.5 rounded-md yt-skeleton" />
           ) : metadata ? (
             <p className="text-xs font-semibold text-zinc-200 truncate tracking-tight" title={metadata.title}>
               {metadata.title}
@@ -79,39 +81,12 @@ export function EditorHeader({
           )}
         </div>
 
-        {/* Right: Quick URL, Export CTA & Menu Hamburger */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          {onOpenMobileUrlModal && (
-            <button
-              onClick={onOpenMobileUrlModal}
-              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 active:scale-95 transition-all"
-              title="Paste New URL"
-            >
-              <Link2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {onOpenMobileExport && (
-            <button
-              onClick={onOpenMobileExport}
-              disabled={isDownloading}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white hover:bg-zinc-200 text-black text-xs font-extrabold shadow-sm active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
-            >
-              <Download className="w-3 h-3" />
-              <span>Export</span>
-            </button>
-          )}
-
-          {onOpenMobileMenu && (
-            <button
-              onClick={onOpenMobileMenu}
-              className="p-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-              title="Open Menu"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        {/* Platform badge */}
+        {badge && (
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${badge.color}`}>
+            {badge.label}
+          </span>
+        )}
       </header>
 
       {/* ══ DESKTOP APP BAR (>= md) ══ */}

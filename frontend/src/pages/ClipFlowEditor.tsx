@@ -32,11 +32,13 @@ import {
   EditorTimeline,
   EditorExportPanel,
   EditorPlayerSkeleton,
+} from '../components/editor';
+import {
   EditorMobileBottomDock,
   EditorMobileSheet,
   EditorMobileUrlModal,
-} from '../components/editor';
-import type { MobileTab } from '../components/editor/EditorMobileBottomDock';
+  type MobileTab,
+} from '../Mobile UI';
 import { useEditorMetadata } from '../hooks/editor/useEditorMetadata';
 import { useEditorPlayback } from '../hooks/editor/useEditorPlayback';
 
@@ -1147,9 +1149,6 @@ export default function ClipFlowEditor() {
           isProUser={isProUser}
           onOpenCompanionModal={() => setShowCompanionModal(true)}
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
-          onOpenMobileExport={() => setActiveMobileTab('export')}
-          onOpenMobileUrlModal={() => setIsMobileUrlModalOpen(true)}
-          isDownloading={isDownloading}
         />
 
         {/* Body Row */}
@@ -1374,12 +1373,6 @@ export default function ClipFlowEditor() {
         isDownloading={isDownloading}
         downloadStatus={downloadStatus}
         hasMetadata={Boolean(metadata && !isLoadingMeta && !errorMeta)}
-      />
-
-      {/* Mobile Slide-Up Drawer / Bottom Sheet */}
-      <EditorMobileSheet
-        activeTab={activeMobileTab}
-        onClose={() => setActiveMobileTab(null)}
         aspectRatio={aspectRatio}
         applyAspectRatio={applyAspectRatio}
         fitMode={fitMode}
@@ -1403,6 +1396,16 @@ export default function ClipFlowEditor() {
         downloadSuccess={downloadSuccess}
         currentTime={currentTime}
         metadata={metadata}
+      />
+
+      {/* Mobile Slide-Up Drawer / Bottom Sheet — export only */}
+      <EditorMobileSheet
+        activeTab={activeMobileTab}
+        onClose={() => setActiveMobileTab(null)}
+        downloadFormat={downloadFormat}
+        captionFormat={captionFormat}
+        downloadQuality={downloadQuality}
+        downloadAudioBitrate={downloadAudioBitrate}
         customFileName={customFileName}
         setCustomFileName={setCustomFileName}
         statusMessage={statusMessage}
