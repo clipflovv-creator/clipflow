@@ -34,15 +34,12 @@ router.post('/register', authRateLimiter, async (req: Request, res: Response) =>
   try {
     const { user } = await AuthService.register(parseResult.data);
 
-    // Create a new server-side session and set secure cookie
-    const { rawSessionId } = await SessionService.createSession(user._id, req);
-    SessionService.setSessionCookie(res, rawSessionId);
-
-    const userDTO = await AuthService.toUserDTO(user);
+    // Do NOT create a session yet — user must verify email first.
     res.status(201).json({
       success: true,
-      message: 'Registration successful! A verification email has been sent.',
-      user: userDTO,
+      requiresVerification: true,
+      email: user.email,
+      message: 'Account created! Check your email for the 6-digit verification code.',
     });
   } catch (err: any) {
     console.error('[Auth Register Error]', err.message);
@@ -117,10 +114,15 @@ router.post('/verify-email', verificationRateLimiter, async (req: Request, res: 
 
   try {
     const user = await AuthService.verifyEmail(tokenOrCode, parseResult.data.email);
+
+    // Create session now that email is verified — user is logged in.
+    const { rawSessionId } = await SessionService.createSession(user._id, req);
+    SessionService.setSessionCookie(res, rawSessionId);
+
     const userDTO = await AuthService.toUserDTO(user);
     res.json({
       success: true,
-      message: 'Email successfully verified!',
+      message: 'Email verified! Welcome to ClipFlow.',
       user: userDTO,
     });
   } catch (err: any) {

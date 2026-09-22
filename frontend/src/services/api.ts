@@ -53,6 +53,16 @@ export const authApi = {
     });
   },
 
+  async verifyEmailWithCode(code: string, email: string) {
+    return fetch(`${BACKEND_URL}/api/auth/verify-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ code, email }),
+    });
+  },
+
+
   async resendVerification(email: string) {
     return fetch(`${BACKEND_URL}/api/auth/resend-verification`, {
       method: 'POST',

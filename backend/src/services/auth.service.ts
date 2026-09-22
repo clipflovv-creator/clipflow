@@ -120,11 +120,6 @@ export class AuthService {
     // Send verification email with 6-digit OTP code and 1-click link
     await emailService.sendVerificationEmail(user.email, otpCode, verificationToken, user.name);
 
-    // Send Welcome Email introducing ClipFlow's video editing tools
-    await emailService.sendWelcomeEmail(user.email, user.name).catch((err) => {
-      console.warn('[Auth] Welcome email error:', err.message);
-    });
-
     return { user, verificationToken };
   }
 
@@ -187,6 +182,11 @@ export class AuthService {
 
     // Invalidate token to prevent reuse
     await EmailVerificationTokenModel.deleteMany({ userId: user._id });
+
+    // Send Welcome Email now that account is verified
+    await emailService.sendWelcomeEmail(user.email, user.name).catch((err) => {
+      console.warn('[Auth] Welcome email error:', err.message);
+    });
 
     return user;
   }

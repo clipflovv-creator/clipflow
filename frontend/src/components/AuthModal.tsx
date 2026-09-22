@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, KeyRound, ArrowLeft } from 'lucide-react';
+import { X, Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, KeyRound, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface AuthModalProps {
@@ -10,7 +10,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(initialMode);
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'verify'>(initialMode);
   const [forgotStep, setForgotStep] = useState<'request' | 'verify'>('request');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -21,11 +21,107 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
-  const { loginWithGoogle, loginWithEmail, registerWithEmail, requestPasswordReset, resetPassword } = useAuth();
+  // OTP digit state — 6 single-char inputs
+  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const { loginWithGoogle, loginWithEmail, registerWithEmail, requestPasswordReset, resetPassword, verifyEmailWithCode, resendVerification } = useAuth();
+
+  // Resend cooldown countdown
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
+  // Auto-focus first OTP box when entering verify mode
+  useEffect(() => {
+    if (mode === 'verify') {
+      setTimeout(() => otpRefs.current[0]?.focus(), 100);
+    }
+  }, [mode]);
 
   if (!isOpen) return null;
 
+  const resetToMode = (m: 'login' | 'register' | 'forgot') => {
+    setMode(m);
+    setError(null);
+    setSuccessMsg(null);
+    setOtpDigits(['', '', '', '', '', '']);
+  };
+
+  /* ─── OTP input handlers ─────────────────────────────────────────────── */
+  const handleOtpChange = (idx: number, val: string) => {
+    const digit = val.replace(/\D/g, '').slice(-1);
+    const next = [...otpDigits];
+    next[idx] = digit;
+    setOtpDigits(next);
+    if (digit && idx < 5) otpRefs.current[idx + 1]?.focus();
+  };
+
+  const handleOtpKeyDown = (idx: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otpDigits[idx] && idx > 0) {
+      otpRefs.current[idx - 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    const next = [...otpDigits];
+    pasted.split('').forEach((ch, i) => { next[i] = ch; });
+    setOtpDigits(next);
+    const focusIdx = Math.min(pasted.length, 5);
+    otpRefs.current[focusIdx]?.focus();
+  };
+
+  /* ─── OTP verify submit ───────────────────────────────────────────────── */
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    const code = otpDigits.join('');
+    if (code.length < 6) {
+      setError('Enter all 6 digits of your verification code');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await verifyEmailWithCode(code, email);
+      if (!res.success) {
+        setError(res.error || 'Invalid or expired code. Try resending.');
+        setOtpDigits(['', '', '', '', '', '']);
+        otpRefs.current[0]?.focus();
+      } else {
+        setSuccessMsg("Email verified! You're now signed in.");
+        setTimeout(() => onClose(), 700);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Verification failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0) return;
+    setError(null);
+    setLoading(true);
+    try {
+      await resendVerification(email);
+      setSuccessMsg('New code sent! Check your inbox.');
+      setResendCooldown(60);
+      setOtpDigits(['', '', '', '', '', '']);
+      otpRefs.current[0]?.focus();
+    } catch (err: any) {
+      setError('Failed to resend. Try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ─── Main form submit (login / register / forgot) ────────────────────── */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -33,21 +129,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
     if (mode === 'forgot') {
       if (forgotStep === 'request') {
-        if (!email.trim()) {
-          setError('Please enter your email address');
-          return;
-        }
-
+        if (!email.trim()) { setError('Please enter your email address'); return; }
         setLoading(true);
         try {
           const res = await requestPasswordReset(email.trim());
           if (!res.success) {
-            setError(res.error || 'Failed to request password reset code');
+            setError(res.error || 'Failed to send reset code');
           } else {
-            setSuccessMsg(res.message || 'Verification code generated! Enter it below.');
-            if (res.resetCode) {
-              setResetCode(res.resetCode);
-            }
+            setSuccessMsg(res.message || 'Reset code sent! Check your inbox.');
+            if (res.resetCode) setResetCode(res.resetCode);
             setForgotStep('verify');
           }
         } catch (err: any) {
@@ -58,30 +148,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         return;
       }
 
-      // Step: verify & reset password
-      if (!resetCode.trim() || !password) {
-        setError('Please enter verification code and new password');
-        return;
-      }
-      if (password.length < 6) {
-        setError('New password must be at least 6 characters');
-        return;
-      }
-      if (password !== confirmPassword) {
-        setError('Passwords do not match');
-        return;
-      }
-
+      if (!resetCode.trim() || !password) { setError('Enter verification code and new password'); return; }
+      if (password.length < 6) { setError('New password must be at least 6 characters'); return; }
+      if (password !== confirmPassword) { setError('Passwords do not match'); return; }
       setLoading(true);
       try {
         const res = await resetPassword(email.trim(), resetCode.trim(), password);
         if (!res.success) {
           setError(res.error || 'Failed to reset password');
         } else {
-          setSuccessMsg('Password reset successfully! You are now logged in.');
-          setTimeout(() => {
-            onClose();
-          }, 800);
+          setSuccessMsg('Password reset! You are now signed in.');
+          setTimeout(() => onClose(), 800);
         }
       } catch (err: any) {
         setError(err.message || 'Failed to reset password');
@@ -91,34 +168,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       return;
     }
 
-    if (!email.trim() || !password) {
-      setError('Please fill in all required fields');
-      return;
-    }
+    if (!email.trim() || !password) { setError('Please fill in all required fields'); return; }
 
     if (mode === 'register') {
-      if (password.length < 6) {
-        setError('Password must be at least 6 characters long');
-        return;
-      }
-      if (password !== confirmPassword) {
-        setError('Passwords do not match');
-        return;
-      }
+      if (password.length < 6) { setError('Password must be at least 6 characters'); return; }
+      if (password !== confirmPassword) { setError('Passwords do not match'); return; }
     }
 
     setLoading(true);
-
     try {
       if (mode === 'register') {
         const res = await registerWithEmail(email.trim(), password, name.trim());
         if (!res.success) {
           setError(res.error || 'Registration failed');
+        } else if (res.requiresVerification) {
+          // Show OTP step — do NOT close modal
+          setMode('verify');
+          setError(null);
+          setSuccessMsg(null);
         } else {
-          setSuccessMsg('Account created successfully! Welcome to ClipFlow.');
-          setTimeout(() => {
-            onClose();
-          }, 800);
+          // Edge-case fallback if server ever skips verification
+          setSuccessMsg('Account created! Welcome to ClipFlow.');
+          setTimeout(() => onClose(), 800);
         }
       } else {
         const res = await loginWithEmail(email.trim(), password);
@@ -126,9 +197,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           setError(res.error || 'Invalid email or password');
         } else {
           setSuccessMsg('Signed in successfully!');
-          setTimeout(() => {
-            onClose();
-          }, 600);
+          setTimeout(() => onClose(), 600);
         }
       }
     } catch (err: any) {
@@ -138,6 +207,130 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     }
   };
 
+  /* ─── Verify Email OTP Screen ─────────────────────────────────────────── */
+  if (mode === 'verify') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 8 }}
+          className="bg-[#0c0c0f] border border-white/10 w-full max-w-md rounded-2xl shadow-2xl p-6 relative overflow-hidden text-[#f8fafc]"
+        >
+          {/* Close */}
+          <button onClick={onClose} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white hover:bg-white/10 rounded-full transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+
+          {/* Header */}
+          <div className="text-center mb-6 space-y-1">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-purple-500/15 border border-purple-500/30 mb-3">
+              <ShieldCheck className="w-6 h-6 text-purple-400" />
+            </div>
+            <h2 className="text-lg font-bold text-white">Check Your Email</h2>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              We sent a 6-digit code to<br />
+              <span className="text-purple-300 font-semibold">{email}</span>
+            </p>
+          </div>
+
+          {/* Alerts */}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                className="mb-4 p-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-red-300 text-xs flex items-center gap-2"
+              >
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                <span>{error}</span>
+              </motion.div>
+            )}
+            {successMsg && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                className="mb-4 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>{successMsg}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* 6-digit OTP boxes */}
+          <form onSubmit={handleVerifyOtp}>
+            <div className="flex justify-center gap-2.5 mb-6">
+              {otpDigits.map((digit, idx) => (
+                <input
+                  key={idx}
+                  ref={(el) => { otpRefs.current[idx] = el; }}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={1}
+                  value={digit}
+                  onChange={(e) => handleOtpChange(idx, e.target.value)}
+                  onKeyDown={(e) => handleOtpKeyDown(idx, e)}
+                  onPaste={idx === 0 ? handleOtpPaste : undefined}
+                  className={`w-11 h-14 text-center text-xl font-bold font-mono rounded-xl border transition-all outline-none
+                    ${digit
+                      ? 'border-purple-500 bg-purple-500/10 text-white shadow-[0_0_0_3px_rgba(168,85,247,0.15)]'
+                      : 'border-white/10 bg-black/40 text-white'
+                    }
+                    focus:border-purple-400 focus:bg-purple-500/10 focus:shadow-[0_0_0_3px_rgba(168,85,247,0.2)]
+                    caret-transparent`}
+                />
+              ))}
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || otpDigits.join('').length < 6}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-purple-600/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 group"
+            >
+              {loading ? (
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                  className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                />
+              ) : (
+                <>
+                  <span>Verify &amp; Sign In</span>
+                  <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Resend */}
+          <div className="mt-5 text-center text-xs text-gray-500">
+            Didn't receive it?{' '}
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={resendCooldown > 0 || loading}
+              className="text-purple-400 hover:text-purple-300 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
+            </button>
+          </div>
+
+          {/* Back to register */}
+          <div className="mt-3 text-center">
+            <button
+              type="button"
+              onClick={() => resetToMode('register')}
+              className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-300 transition-colors mx-auto"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              Use a different email
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  /* ─── Default Auth Modal (login / register / forgot) ─────────────────── */
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
       <motion.div
@@ -250,21 +443,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         <AnimatePresence>
           {error && (
             <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
+              initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
               className="mb-4 p-2.5 rounded-xl bg-red-500/10 border border-red-500/25 text-red-300 text-xs flex items-center gap-2"
             >
               <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
               <span>{error}</span>
             </motion.div>
           )}
-
           {successMsg && (
             <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
+              initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
               className="mb-4 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs flex items-center gap-2"
             >
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
@@ -291,7 +479,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             </div>
           )}
 
-          {/* Email field (Editable in login/reg/forgot step 1, read-only in step 2) */}
+          {/* Email field */}
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Email Address</label>
             <div className="relative">
