@@ -41,10 +41,7 @@ export interface SegmentFetchProgress {
   message: string;
 }
 
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
-  ((typeof window !== 'undefined' && window.location.port !== '5173')
-    ? window.location.origin
-    : 'http://localhost:3001');
+import { resolveRelayUrl } from './clientMediaRangeFetcher.js';
 
 /**
  * Resolves a relative or absolute URL against a base URL.
@@ -70,7 +67,7 @@ export async function parseHlsManifest(
     (targetManifestUrl.includes('cloudfront.net') || targetManifestUrl.includes('ttvnw.net')) &&
     !targetManifestUrl.includes('/api/video/')
   ) {
-    targetManifestUrl = `${BACKEND_URL}/api/video/hls-proxy?url=${encodeURIComponent(targetManifestUrl)}`;
+    targetManifestUrl = resolveRelayUrl(targetManifestUrl);
   }
   const res = await fetch(targetManifestUrl);
   if (!res.ok) {
@@ -297,7 +294,7 @@ export async function fetchRequiredHlsSegments(
         (fetchUrl.includes('cloudfront.net') || fetchUrl.includes('ttvnw.net')) &&
         !fetchUrl.includes('/api/video/')
       ) {
-        fetchUrl = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(fetchUrl)}`;
+        fetchUrl = resolveRelayUrl(fetchUrl);
       }
       const initRes = await fetch(fetchUrl);
       if (initRes.ok) {
@@ -321,7 +318,7 @@ export async function fetchRequiredHlsSegments(
       (fetchUrl.includes('cloudfront.net') || fetchUrl.includes('ttvnw.net')) &&
       !fetchUrl.includes('/api/video/')
     ) {
-      fetchUrl = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(fetchUrl)}`;
+      fetchUrl = resolveRelayUrl(fetchUrl);
     }
     const res = await fetch(fetchUrl);
     if (!res.ok) {

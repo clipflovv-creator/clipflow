@@ -36,6 +36,8 @@ import {
 import { useEditorMetadata } from '../hooks/editor/useEditorMetadata';
 import { useEditorPlayback } from '../hooks/editor/useEditorPlayback';
 
+import { resolveRelayUrl } from '../services/clientMediaRangeFetcher.js';
+
 const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
   ((typeof window !== 'undefined' && window.location.port !== '5173')
     ? window.location.origin
@@ -408,7 +410,7 @@ export default function ClipFlowEditor() {
     if (isTwitch) return selectedPreviewQualityUrl || twitchHlsUrl;
     if (!rawPreviewSrc) return '';
     if (isTwitter || isInstagram || useProxyFallback || rawPreviewSrc.includes('twimg.com') || rawPreviewSrc.includes('cdninstagram.com') || rawPreviewSrc.includes('instagram.com')) {
-      return `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(rawPreviewSrc)}`;
+      return resolveRelayUrl(rawPreviewSrc);
     }
     return rawPreviewSrc;
   }, [rawPreviewSrc, isTwitter, isInstagram, useProxyFallback, isTwitch, twitchHlsUrl, selectedPreviewQualityUrl]);
@@ -723,7 +725,7 @@ export default function ClipFlowEditor() {
           img.onload = resolve;
           img.onerror = () => {
             img.onerror = reject;
-            img.src = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(thumbUrl)}`;
+            img.src = resolveRelayUrl(thumbUrl);
           };
           img.src = thumbUrl;
         });

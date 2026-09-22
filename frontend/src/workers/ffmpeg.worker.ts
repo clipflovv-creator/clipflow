@@ -254,7 +254,56 @@ self.onmessage = async (e: MessageEvent) => {
         );
       }
 
-      console.log(`[FFmpeg.wasm Worker 🚀] Executing args:\n${args.join(' ')}`);
+      // ── FAST STREAM COPY PATH (Default 16:9 / No Filter) ───────────────────
+      if (!isAudio && !filter) {
+        self.postMessage({
+          type: 'PROGRESS',
+          jobId,
+          percent: 60,
+          message: 'Fast muxing trimmed clip (lossless stream copy)...',
+        });
+        const fastCopyArgs = [
+          '-err_detect', 'ignore_err',
+          '-fflags', '+genpts+discardcorrupt',
+          '-i', internalInput,
+          '-ss', Math.max(0, trimStart).toFixed(3),
+          '-t', Math.max(0.1, duration).toFixed(3),
+          '-c:v', 'copy',
+          '-c:a', 'aac',
+          '-b:a', safeAudioBitrate,
+          '-map', '0:v:0',
+          '-map', '0:a:0?',
+          '-avoid_negative_ts', 'make_zero',
+          '-movflags', '+faststart',
+          internalOutput,
+        ];
+        console.log(`[FFmpeg.wasm Worker 🚀] Executing fast stream copy args:\n${fastCopyArgs.join(' ')}`);
+        const copyCode = await instance.exec(fastCopyArgs);
+        if (copyCode === 0) {
+          console.log('[FFmpeg.wasm Worker] ✅ Fast stream copy succeeded in milliseconds!');
+          self.postMessage({
+            type: 'PROGRESS',
+            jobId,
+            percent: 95,
+            message: 'Finalizing clip file...',
+          });
+          const outputData = (await instance.readFile(internalOutput)) as Uint8Array;
+          try {
+            await instance.deleteFile(internalInput);
+            await instance.deleteFile(internalOutput);
+          } catch {}
+          self.postMessage({
+            type: 'DONE',
+            jobId,
+            payload: { outputData, fileName: outputFileName },
+          });
+          return;
+        }
+        console.warn('[FFmpeg.wasm Worker] Fast copy returned non-zero code', copyCode, '- falling back to transcode');
+        try { await instance.deleteFile(internalOutput); } catch {}
+      }
+
+      console.log(`[FFmpeg.wasm Worker 🚀] Executing transcode args:\n${args.join(' ')}`);
 
       self.postMessage({
         type: 'PROGRESS',
