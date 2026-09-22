@@ -56,40 +56,24 @@ export async function getFFmpeg(onProgress?: (stage: string, percent: number) =>
     const ffmpeg = new FFmpeg();
     ffmpegInstance = ffmpeg;
 
-    // 1. Try local self-hosted core files first
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const coreURL = `${origin}/ffmpeg/ffmpeg-core.js`;
-    const wasmURL = `${origin}/ffmpeg/ffmpeg-core.wasm`;
-
+    // Load single-threaded FFmpeg wasm core from fast CDN
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
     try {
       await ffmpeg.load({
-        coreURL: await toBlobURL(coreURL, 'text/javascript'),
-        wasmURL: await toBlobURL(wasmURL, 'application/wasm'),
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
       });
       isLoaded = true;
       return ffmpeg;
-    } catch (localErr) {
-      console.warn('[ClientFFmpegEngine] Local core load failed, falling back to CDN:', localErr);
-
-      // 2. Fallback to unpkg CDN
-      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
-      try {
-        await ffmpeg.load({
-          coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-          wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        });
-        isLoaded = true;
-        return ffmpeg;
-      } catch (primaryErr) {
-        console.warn('[ClientFFmpegEngine] Primary CDN load failed, trying backup CDN:', primaryErr);
-        const fallbackURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
-        await ffmpeg.load({
-          coreURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.js`, 'text/javascript'),
-          wasmURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        });
-        isLoaded = true;
-        return ffmpeg;
-      }
+    } catch (primaryErr) {
+      console.warn('[ClientFFmpegEngine] Primary CDN load failed, trying backup CDN:', primaryErr);
+      const fallbackURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
+      await ffmpeg.load({
+        coreURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.wasm`, 'application/wasm'),
+      });
+      isLoaded = true;
+      return ffmpeg;
     }
   })();
 

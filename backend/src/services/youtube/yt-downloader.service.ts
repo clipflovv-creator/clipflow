@@ -11,6 +11,21 @@ import { getFFmpegLocationFlag } from '../../utils/binary-resolver.util.js';
  * Place it at: backend/cookies.txt
  */
 function findCookiesFile(): string | null {
+  try {
+    const rawEnv = process.env.YOUTUBE_COOKIES || (
+      process.env.YOUTUBE_COOKIES_BASE64
+        ? Buffer.from(process.env.YOUTUBE_COOKIES_BASE64, 'base64').toString('utf8')
+        : ''
+    );
+    if (rawEnv && rawEnv.trim().length > 50) {
+      const target = path.join(process.cwd(), 'cookies.txt');
+      if (!fs.existsSync(target) || fs.statSync(target).size < 50) {
+        fs.writeFileSync(target, rawEnv.trim(), 'utf8');
+      }
+      return target;
+    }
+  } catch {}
+
   const candidates = [
     path.join(process.cwd(), 'cookies.txt'),
     path.join(process.cwd(), 'youtube-cookies.txt'),
@@ -125,6 +140,7 @@ export class YouTubeDownloaderService {
         `"${ytDlpBin}"`,
         ...(ffmpegLocFlag ? [ffmpegLocFlag] : []),
         '--js-runtimes node',
+        '--extractor-args "youtube:player_client=android,ios,mweb"',
       ];
 
       if (isTrimmed) {

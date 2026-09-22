@@ -10,7 +10,7 @@ import { api } from './api';
 
 // Edge Relay URL (if deployed on Cloudflare Workers, set VITE_EDGE_RELAY_URL in frontend/.env)
 // Example: https://yt-range-relay.yourname.workers.dev
-const EDGE_RELAY_URL = (import.meta.env.VITE_EDGE_RELAY_URL as string) || '';
+const EDGE_RELAY_URL = (import.meta.env.VITE_EDGE_RELAY_URL as string) || 'https://yt-range-relay.clipflovv.workers.dev';
 
 /**
  * Wraps a direct media stream URL (e.g. Googlevideo) with CORS proxy / Edge Relay.
