@@ -66,9 +66,13 @@ app.use(
   })
 );
 
+// Enable trust proxy for Render / Vercel reverse proxy
+app.set('trust proxy', 1);
+
 // CORS configuration supporting credentials (cookies)
 const allowedOrigins = [
   FRONTEND_URL,
+  'https://clipflow-lake.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
   'http://127.0.0.1:5173',
@@ -77,7 +81,7 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
         callback(null, true);
       } else {
         callback(null, true); // Permissive in dev/local

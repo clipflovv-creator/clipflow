@@ -18,5 +18,7 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+    // Fixed: Added colon, converted to an array, and stripped "https://"
+    allowedHosts: ['imputedly-problematic-hilaria.ngrok-free.dev']
   },
 })

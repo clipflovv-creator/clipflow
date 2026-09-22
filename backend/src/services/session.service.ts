@@ -104,7 +104,7 @@ export class SessionService {
     res.cookie(SESSION_COOKIE_NAME, rawSessionId, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: SESSION_TTL_MS,
       path: '/',
     });
@@ -118,7 +118,7 @@ export class SessionService {
     res.clearCookie(SESSION_COOKIE_NAME, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
+      sameSite: isProduction ? 'none' : 'lax',
       path: '/',
     });
   }
