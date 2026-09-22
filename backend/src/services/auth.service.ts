@@ -6,7 +6,7 @@ import { PasswordResetTokenModel } from '../models/PasswordResetToken.model.js';
 import { GoogleOAuthConnectionModel } from '../models/GoogleOAuthConnection.model.js';
 import { SessionService } from './session.service.js';
 import { emailService } from './email.service.js';
-import { generateSecureToken, hashToken } from '../utils/hash.util.js';
+import { generateSecureToken, generateNumericOTP, hashToken } from '../utils/hash.util.js';
 
 export interface UserResponseDTO {
   id: string;
@@ -99,19 +99,31 @@ export class AuthService {
       plan,
     });
 
-    // Generate secure one-time email verification token (24h expiry)
+    // Generate secure 6-digit numeric OTP and token (24h expiry)
+    const otpCode = generateNumericOTP(6);
     const verificationToken = generateSecureToken(32);
-    const tokenHash = hashToken(verificationToken);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    await EmailVerificationTokenModel.create({
-      userId: user._id,
-      tokenHash,
-      expiresAt,
-    });
+    await EmailVerificationTokenModel.create([
+      {
+        userId: user._id,
+        tokenHash: hashToken(otpCode),
+        expiresAt,
+      },
+      {
+        userId: user._id,
+        tokenHash: hashToken(verificationToken),
+        expiresAt,
+      },
+    ]);
 
-    // Send verification email
-    await emailService.sendVerificationEmail(user.email, verificationToken);
+    // Send verification email with 6-digit OTP code and 1-click link
+    await emailService.sendVerificationEmail(user.email, otpCode, verificationToken, user.name);
+
+    // Send Welcome Email introducing ClipFlow's video editing tools
+    await emailService.sendWelcomeEmail(user.email, user.name).catch((err) => {
+      console.warn('[Auth] Welcome email error:', err.message);
+    });
 
     return { user, verificationToken };
   }
@@ -194,18 +206,25 @@ export class AuthService {
     // Invalidate old tokens
     await EmailVerificationTokenModel.deleteMany({ userId: user._id });
 
-    // Generate new token
+    // Generate new 6-digit OTP & token
+    const otpCode = generateNumericOTP(6);
     const verificationToken = generateSecureToken(32);
-    const tokenHash = hashToken(verificationToken);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    await EmailVerificationTokenModel.create({
-      userId: user._id,
-      tokenHash,
-      expiresAt,
-    });
+    await EmailVerificationTokenModel.create([
+      {
+        userId: user._id,
+        tokenHash: hashToken(otpCode),
+        expiresAt,
+      },
+      {
+        userId: user._id,
+        tokenHash: hashToken(verificationToken),
+        expiresAt,
+      },
+    ]);
 
-    await emailService.sendVerificationEmail(user.email, verificationToken);
+    await emailService.sendVerificationEmail(user.email, otpCode, verificationToken, user.name);
   }
 
   /**
@@ -223,17 +242,24 @@ export class AuthService {
     // Invalidate existing reset tokens for user
     await PasswordResetTokenModel.deleteMany({ userId: user._id });
 
+    const otpCode = generateNumericOTP(6);
     const rawToken = generateSecureToken(32);
-    const tokenHash = hashToken(rawToken);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    await PasswordResetTokenModel.create({
-      userId: user._id,
-      tokenHash,
-      expiresAt,
-    });
+    await PasswordResetTokenModel.create([
+      {
+        userId: user._id,
+        tokenHash: hashToken(otpCode),
+        expiresAt,
+      },
+      {
+        userId: user._id,
+        tokenHash: hashToken(rawToken),
+        expiresAt,
+      },
+    ]);
 
-    await emailService.sendPasswordResetEmail(user.email, rawToken);
+    await emailService.sendPasswordResetEmail(user.email, otpCode, rawToken);
   }
 
   /**

@@ -9,6 +9,17 @@ export function generateSecureToken(bytes: number = 32): string {
 }
 
 /**
+ * Generates a cryptographically secure numeric OTP.
+ * crypto.randomInt is used instead of Math.random() because OTPs are security-sensitive.
+ * @param length Number of digits (default 6)
+ */
+export function generateNumericOTP(length: number = 6): string {
+  const min = Math.pow(10, length - 1);
+  const max = Math.pow(10, length);
+  return crypto.randomInt(min, max).toString();
+}
+
+/**
  * Produces a SHA-256 hash of a string (used for session IDs, email verification tokens, reset tokens).
  */
 export function hashToken(token: string): string {
