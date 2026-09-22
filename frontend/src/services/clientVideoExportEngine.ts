@@ -19,6 +19,7 @@ export interface ClientExportOptions {
   aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5' | 'custom' | string;
   cropBox?: { x: number; y: number; width: number; height: number };
   fitMode?: 'crop' | 'pad';
+  cropPosition?: 'center' | 'left' | 'right';
   customFileName?: string;
   onProgress?: (phase: string, percent?: number) => void;
 }
@@ -63,6 +64,8 @@ export class ClientVideoExportEngine {
       format = 'mp4',
       quality = '1080p',
       aspectRatio = '16:9',
+      fitMode = 'pad',
+      cropPosition = 'center',
       cropBox,
       customFileName,
       onProgress,
@@ -106,6 +109,8 @@ export class ClientVideoExportEngine {
       format: effectiveFormat,
       quality,
       aspectRatio,
+      fitMode,
+      cropPosition,
       cropBox: aspectRatio === 'custom' ? cropBox : undefined,
       duration: totalDuration,
       videoFileSize: tracks.videoFormat?.filesize,

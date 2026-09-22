@@ -111,24 +111,25 @@ function buildVideoFilter(
   else if (aspectRatio && aspectRatio !== '16:9' && aspectRatio !== 'original') {
     if (aspectRatio === '9:16') {
       if (fitMode === 'crop') {
-        const xOffset = cropPosition === 'left' ? '0' : cropPosition === 'right' ? 'iw-ih*9/16' : '(iw-ih*9/16)/2';
-        filters.push(`crop=trunc(ih*9/16/2)*2:ih:trunc(${xOffset}/2)*2:0`);
+        const xOffset = cropPosition === 'left' ? '0' : cropPosition === 'right' ? '(iw-out_w)' : '(iw-out_w)/2';
+        filters.push(`crop=trunc(min(iw\\,ih*9/16)/2)*2:trunc(min(ih\\,iw*16/9)/2)*2:${xOffset}:(ih-out_h)/2`);
       } else {
-        filters.push(`scale=trunc(ih*9/16/2)*2:ih:force_original_aspect_ratio=decrease,pad=trunc(ih*9/16/2)*2:ih:(ow-iw)/2:(oh-ih)/2:black`);
+        // Fit mode: pad to exact 9:16 aspect ratio with top/bottom black letterboxing
+        filters.push(`pad=trunc(max(iw\\,ih*9/16)/2)*2:trunc(max(ih\\,iw*16/9)/2)*2:(ow-iw)/2:(oh-ih)/2:black`);
       }
     } else if (aspectRatio === '1:1') {
       if (fitMode === 'crop') {
-        const xOffset = cropPosition === 'left' ? '0' : cropPosition === 'right' ? 'iw-ih' : '(iw-ih)/2';
-        filters.push(`crop=min(iw\\,ih):min(iw\\,ih):trunc(${xOffset}/2)*2:0`);
+        const xOffset = cropPosition === 'left' ? '0' : cropPosition === 'right' ? '(iw-out_w)' : '(iw-out_w)/2';
+        filters.push(`crop=trunc(min(iw\\,ih)/2)*2:trunc(min(iw\\,ih)/2)*2:${xOffset}:(ih-out_h)/2`);
       } else {
-        filters.push(`scale=min(iw\\,ih):min(iw\\,ih):force_original_aspect_ratio=decrease,pad=max(iw\\,ih):max(iw\\,ih):(ow-iw)/2:(oh-ih)/2:black`);
+        filters.push(`pad=trunc(max(iw\\,ih)/2)*2:trunc(max(iw\\,ih)/2)*2:(ow-iw)/2:(oh-ih)/2:black`);
       }
     } else if (aspectRatio === '4:5') {
       if (fitMode === 'crop') {
-        const xOffset = cropPosition === 'left' ? '0' : cropPosition === 'right' ? 'iw-ih*4/5' : '(iw-ih*4/5)/2';
-        filters.push(`crop=trunc(ih*4/5/2)*2:ih:trunc(${xOffset}/2)*2:0`);
+        const xOffset = cropPosition === 'left' ? '0' : cropPosition === 'right' ? '(iw-out_w)' : '(iw-out_w)/2';
+        filters.push(`crop=trunc(min(iw\\,ih*4/5)/2)*2:trunc(min(ih\\,iw*5/4)/2)*2:${xOffset}:(ih-out_h)/2`);
       } else {
-        filters.push(`scale=trunc(ih*4/5/2)*2:ih:force_original_aspect_ratio=decrease,pad=trunc(ih*4/5/2)*2:ih:(ow-iw)/2:(oh-ih)/2:black`);
+        filters.push(`pad=trunc(max(iw\\,ih*4/5)/2)*2:trunc(max(ih\\,iw*5/4)/2)*2:(ow-iw)/2:(oh-ih)/2:black`);
       }
     }
   }

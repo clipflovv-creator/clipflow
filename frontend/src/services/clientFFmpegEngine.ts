@@ -18,6 +18,8 @@ export interface FFmpegClipOptions {
   format?: 'mp4' | 'mp3' | 'wav' | 'm4a' | string;
   quality?: string;
   aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5' | 'custom' | string;
+  fitMode?: 'crop' | 'pad';
+  cropPosition?: 'center' | 'left' | 'right';
   cropBox?: { x: number; y: number; width: number; height: number };
   duration?: number;
   videoFileSize?: number;
@@ -54,25 +56,40 @@ export async function getFFmpeg(onProgress?: (stage: string, percent: number) =>
     const ffmpeg = new FFmpeg();
     ffmpegInstance = ffmpeg;
 
-    // Use single-threaded @ffmpeg/core 0.12.10 (runs without SharedArrayBuffer / COOP headers)
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
+    // 1. Try local self-hosted core files first
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const coreURL = `${origin}/ffmpeg/ffmpeg-core.js`;
+    const wasmURL = `${origin}/ffmpeg/ffmpeg-core.wasm`;
 
     try {
       await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        coreURL: await toBlobURL(coreURL, 'text/javascript'),
+        wasmURL: await toBlobURL(wasmURL, 'application/wasm'),
       });
       isLoaded = true;
       return ffmpeg;
-    } catch (primaryErr) {
-      console.warn('[ClientFFmpegEngine] Primary CDN load failed, trying backup CDN:', primaryErr);
-      const fallbackURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
-      isLoaded = true;
-      return ffmpeg;
+    } catch (localErr) {
+      console.warn('[ClientFFmpegEngine] Local core load failed, falling back to CDN:', localErr);
+
+      // 2. Fallback to unpkg CDN
+      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
+      try {
+        await ffmpeg.load({
+          coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        });
+        isLoaded = true;
+        return ffmpeg;
+      } catch (primaryErr) {
+        console.warn('[ClientFFmpegEngine] Primary CDN load failed, trying backup CDN:', primaryErr);
+        const fallbackURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
+        await ffmpeg.load({
+          coreURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        });
+        isLoaded = true;
+        return ffmpeg;
+      }
     }
   })();
 
@@ -269,43 +286,76 @@ async function fetchSmartMediaStream(
 }
 
 /**
- * Computes FFmpeg crop filter for target aspect ratio.
+ * Computes FFmpeg video filter for target aspect ratio, fit/pad mode, crop position, and quality scaling.
  */
-function buildCropFilter(
+function buildVideoFilter(
   aspectRatio: string = '16:9',
-  cropBox?: { x: number; y: number; width: number; height: number }
+  fitMode: 'crop' | 'pad' = 'pad',
+  cropPosition: 'center' | 'left' | 'right' = 'center',
+  cropBox?: { x: number; y: number; width: number; height: number },
+  quality?: string
 ): string | null {
-  // If 16:9 standard landscape and no custom crop requested, no cropping needed!
-  if ((aspectRatio === '16:9' || !aspectRatio) && !cropBox) {
-    return null;
-  }
+  const filters: string[] = [];
 
-  // If custom cropBox is provided (only when custom crop or non-16:9)
-  if (cropBox && cropBox.width > 0 && cropBox.height > 0 && aspectRatio === 'custom') {
-    // If coordinates are normalized ratios (0 to 1)
+  // 1. Interactive Drag Crop Box Coordinates (only when custom crop or active sub-frame is defined)
+  if (
+    fitMode !== 'crop' &&
+    cropBox &&
+    cropBox.width > 0 &&
+    cropBox.height > 0 &&
+    (aspectRatio === 'custom' || (cropBox.width < 0.999 || cropBox.height < 0.999 || cropBox.x > 0.001 || cropBox.y > 0.001)) &&
+    aspectRatio !== '16:9'
+  ) {
     if (cropBox.width <= 1.0 && cropBox.height <= 1.0) {
-      if (cropBox.width >= 0.999 && cropBox.height >= 0.999) {
-        return null;
-      }
-      return `crop=trunc(iw*${cropBox.width}/2)*2:trunc(ih*${cropBox.height}/2)*2:trunc(iw*${cropBox.x}):trunc(ih*${cropBox.y})`;
+      const w = Math.min(1, Math.max(0.05, cropBox.width)).toFixed(4);
+      const h = Math.min(1, Math.max(0.05, cropBox.height)).toFixed(4);
+      const x = Math.min(1, Math.max(0, cropBox.x)).toFixed(4);
+      const y = Math.min(1, Math.max(0, cropBox.y)).toFixed(4);
+      filters.push(`crop=trunc(iw*${w}/2)*2:trunc(ih*${h}/2)*2:trunc(iw*${x}/2)*2:trunc(ih*${y}/2)*2`);
+    } else {
+      const w = Math.max(2, Math.round(cropBox.width / 2) * 2);
+      const h = Math.max(2, Math.round(cropBox.height / 2) * 2);
+      const x = Math.max(0, Math.round(cropBox.x));
+      const y = Math.max(0, Math.round(cropBox.y));
+      filters.push(`crop=${w}:${h}:${x}:${y}`);
     }
-    // Absolute pixel coordinates
-    const w = Math.max(2, Math.round(cropBox.width / 2) * 2);
-    const h = Math.max(2, Math.round(cropBox.height / 2) * 2);
-    const x = Math.max(0, Math.round(cropBox.x));
-    const y = Math.max(0, Math.round(cropBox.y));
-    return `crop=${w}:${h}:${x}:${y}`;
+  }
+  // 2. Aspect Ratio Presets
+  else if (aspectRatio && aspectRatio !== '16:9' && aspectRatio !== 'original') {
+    if (aspectRatio === '9:16') {
+      if (fitMode === 'crop') {
+        const xOffset = cropPosition === 'left' ? '0' : cropPosition === 'right' ? '(iw-out_w)' : '(iw-out_w)/2';
+        filters.push(`crop=trunc(min(iw\\,ih*9/16)/2)*2:trunc(min(ih\\,iw*16/9)/2)*2:${xOffset}:(ih-out_h)/2`);
+      } else {
+        // Fit mode: pad to exact 9:16 aspect ratio with top/bottom black letterboxing
+        filters.push(`pad=trunc(max(iw\\,ih*9/16)/2)*2:trunc(max(ih\\,iw*16/9)/2)*2:(ow-iw)/2:(oh-ih)/2:black`);
+      }
+    } else if (aspectRatio === '1:1') {
+      if (fitMode === 'crop') {
+        const xOffset = cropPosition === 'left' ? '0' : cropPosition === 'right' ? '(iw-out_w)' : '(iw-out_w)/2';
+        filters.push(`crop=trunc(min(iw\\,ih)/2)*2:trunc(min(iw\\,ih)/2)*2:${xOffset}:(ih-out_h)/2`);
+      } else {
+        filters.push(`pad=trunc(max(iw\\,ih)/2)*2:trunc(max(iw\\,ih)/2)*2:(ow-iw)/2:(oh-ih)/2:black`);
+      }
+    } else if (aspectRatio === '4:5') {
+      if (fitMode === 'crop') {
+        const xOffset = cropPosition === 'left' ? '0' : cropPosition === 'right' ? '(iw-out_w)' : '(iw-out_w)/2';
+        filters.push(`crop=trunc(min(iw\\,ih*4/5)/2)*2:trunc(min(ih\\,iw*5/4)/2)*2:${xOffset}:(ih-out_h)/2`);
+      } else {
+        filters.push(`pad=trunc(max(iw\\,ih*4/5)/2)*2:trunc(max(ih\\,iw*5/4)/2)*2:(ow-iw)/2:(oh-ih)/2:black`);
+      }
+    }
   }
 
-  if (aspectRatio === '9:16') {
-    return `crop=trunc(min(iw,ih*9/16)/2)*2:trunc(ih/2)*2:trunc((iw-out_w)/2):0`;
-  } else if (aspectRatio === '1:1') {
-    return `crop=trunc(min(iw,ih)/2)*2:trunc(min(iw,ih)/2)*2:trunc((iw-out_w)/2):trunc((ih-out_h)/2)`;
-  } else if (aspectRatio === '4:5') {
-    return `crop=trunc(min(iw,ih*4/5)/2)*2:trunc(ih/2)*2:trunc((iw-out_w)/2):0`;
+  // 3. Target Quality Downscaling (e.g. 720p, 480p, 360p)
+  if (quality && quality !== '1080p' && quality !== 'source' && quality !== 'best') {
+    const targetHeight = parseInt(quality.replace(/[^\d]/g, ''), 10);
+    if (!isNaN(targetHeight) && targetHeight < 1080 && targetHeight > 0) {
+      filters.push(`scale=-2:${targetHeight}`);
+    }
   }
 
-  return null;
+  return filters.length > 0 ? filters.join(',') : null;
 }
 
 export class ClientFFmpegEngine {
@@ -319,7 +369,10 @@ export class ClientFFmpegEngine {
       trimStart = 0,
       trimEnd,
       format = 'mp4',
+      quality = '1080p',
       aspectRatio = '16:9',
+      fitMode = 'pad',
+      cropPosition = 'center',
       cropBox,
       onProgress,
     } = options;
@@ -416,7 +469,7 @@ export class ClientFFmpegEngine {
       await ffmpeg.writeFile('input_a.m4a', audioSlice.bytes);
     }
 
-    const cropFilter = buildCropFilter(aspectRatio, cropBox);
+    const videoFilter = buildVideoFilter(aspectRatio, fitMode, cropPosition, cropBox, quality);
     const outName = 'output.mp4';
     try { await ffmpeg.deleteFile(outName); } catch {}
 
@@ -430,7 +483,7 @@ export class ClientFFmpegEngine {
       '-i', 'input_v.mp4',
       ...(audioSlice ? ['-ss', aRelativeStart.toFixed(3), '-i', 'input_a.m4a'] : []),
       '-t', duration.toFixed(3),
-      ...(cropFilter ? ['-vf', cropFilter] : []),
+      ...(videoFilter ? ['-vf', videoFilter] : []),
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-crf', '18',
@@ -454,7 +507,7 @@ export class ClientFFmpegEngine {
         '-i', 'input_v.mp4',
         ...(audioSlice ? ['-ss', aRelativeStart.toFixed(3), '-i', 'input_a.m4a'] : []),
         '-t', duration.toFixed(3),
-        ...(cropFilter ? ['-vf', cropFilter] : []),
+        ...(videoFilter ? ['-vf', videoFilter] : []),
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-crf', '20',

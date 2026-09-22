@@ -940,6 +940,7 @@ export default function ClipFlowEditor() {
         aspectRatio: aspectRatio === '16:9' ? undefined : aspectRatio,
         cropBox: aspectRatio === 'custom' ? cropBox : undefined,
         fitMode: fitMode,
+        cropPosition: cropPosition,
         customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
         onProgress: (phase) => setStatusMessage(phase),
       });
