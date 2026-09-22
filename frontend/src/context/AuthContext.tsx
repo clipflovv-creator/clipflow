@@ -36,14 +36,15 @@ interface AuthContextType {
     password: string,
     name?: string,
     plan?: UserPlan
-  ) => Promise<{ success: boolean; error?: string; message?: string }>;
+  ) => Promise<{ success: boolean; error?: string; message?: string; requiresVerification?: boolean; email?: string }>;
   registerWithEmail: (
     email: string,
     password: string,
     name?: string
-  ) => Promise<{ success: boolean; error?: string; message?: string }>;
+  ) => Promise<{ success: boolean; error?: string; message?: string; requiresVerification?: boolean; email?: string }>;
   logout: () => Promise<void>;
   verifyEmail: (token: string) => Promise<{ success: boolean; error?: string; message?: string }>;
+  verifyEmailWithCode: (code: string, email: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   resendVerification: (email: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   forgotPassword: (email: string) => Promise<{ success: boolean; message?: string; resetCode?: string; error?: string }>;
   requestPasswordReset: (email: string) => Promise<{ success: boolean; message?: string; resetCode?: string; error?: string }>;
@@ -135,23 +136,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return { success: false, error: data.error || 'Registration failed' };
       }
 
+      // Server no longer auto-logs in after register.
+      // User must verify email via OTP first.
+      if (data.requiresVerification) {
+        return {
+          success: true,
+          requiresVerification: true,
+          email: data.email as string,
+          message: data.message || 'Check your email for the 6-digit verification code.',
+        };
+      }
+
+      // Fallback: if server returns user directly (shouldn't happen but guard it)
       if (data.user) {
         setUser({
           ...data.user,
           userId: data.user.id,
           hasGoogleDrive: Boolean(data.user.googleDriveConnected),
         });
-        return {
-          success: true,
-          message: data.message || 'Account created! Please check your email for verification.',
-        };
+        return { success: true, message: data.message };
       }
 
-      return { success: false, error: 'Registration succeeded but no user profile returned' };
+      return { success: false, error: 'Unexpected response from server' };
     } catch (err: any) {
       return { success: false, error: err.message || 'Registration request failed' };
     }
   };
+
 
   const logout = async () => {
     try {
@@ -181,6 +192,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return { success: false, error: err.message || 'Verification request failed' };
     }
   };
+
+  const verifyEmailWithCode = async (code: string, email: string) => {
+    try {
+      const res = await api.auth.verifyEmailWithCode(code, email);
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        return { success: false, error: data.error || 'Invalid or expired code' };
+      }
+
+      if (data.user) {
+        setUser({
+          ...data.user,
+          userId: data.user.id,
+          hasGoogleDrive: Boolean(data.user.googleDriveConnected),
+        });
+      }
+      return { success: true, message: data.message || 'Email verified! Welcome to ClipFlow.' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Verification request failed' };
+    }
+  };
+
 
   const resendVerification = async (email: string) => {
     try {
@@ -324,6 +358,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       register(email, pass, name, 'free'),
     logout,
     verifyEmail,
+    verifyEmailWithCode,
     resendVerification,
     forgotPassword,
     requestPasswordReset: forgotPassword,

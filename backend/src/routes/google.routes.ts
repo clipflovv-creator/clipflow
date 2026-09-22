@@ -10,6 +10,7 @@ import {
   AuthenticatedRequest,
 } from '../middlewares/auth.middleware.js';
 import { GoogleOAuthConnectionModel } from '../models/GoogleOAuthConnection.model.js';
+import { emailService } from '../services/email.service.js';
 
 const router = Router();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -98,14 +99,21 @@ router.get(['/callback', '/auth/callback'], async (req: Request, res: Response) 
     const stateUserId = state ? GoogleOAuthService.verifyState(state) : 'new';
 
     // Exchange authorization code for user profile and encrypted tokens
-    const { user } = await GoogleOAuthService.handleCallback(code, stateUserId);
+    const { user, isNewUser } = await GoogleOAuthService.handleCallback(code, stateUserId);
+
+    // Send welcome email to users signing in with Google for the first time
+    if (isNewUser) {
+      emailService.sendWelcomeEmail(user.email, user.name).catch((err) => {
+        console.warn('[Google OAuth] Welcome email error:', err.message);
+      });
+    }
 
     // Create / rotate server-side session and set secure HttpOnly cookie
     const existingSessionId = req.cookies?.sessionId;
     const { rawSessionId } = await SessionService.rotateSession(existingSessionId, user._id, req);
     SessionService.setSessionCookie(res, rawSessionId);
 
-    console.log(`[Google OAuth] User authenticated and Drive connected: ${user.email}`);
+    console.log(`[Google OAuth] User authenticated${isNewUser ? ' (new user)' : ''}: ${user.email}`);
 
     return res.redirect(`${FRONTEND_URL}/editor/storage?auth_status=success&connected=true`);
   } catch (err: any) {
