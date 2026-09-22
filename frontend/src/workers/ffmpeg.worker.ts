@@ -83,44 +83,14 @@ async function loadFFmpeg() {
 }
 
 /**
- * Computes exact pixel dimensions for requested aspect ratio and target quality.
- */
-function computeTargetDimensions(
-  aspectRatio: string = '16:9',
-  quality: string = '1080p'
-): { width: number; height: number } {
-  const cleanQ = parseInt(quality.replace(/[^\d]/g, ''), 10) || 1080;
-
-  if (aspectRatio === '9:16') {
-    // 9:16 Vertical (Shorts / Reels / TikTok): width matches resolution standard (e.g. 1080x1920, 720x1280)
-    const w = cleanQ;
-    const h = Math.round((cleanQ * 16) / 9 / 2) * 2;
-    return { width: w, height: h };
-  } else if (aspectRatio === '1:1') {
-    // 1:1 Square
-    return { width: cleanQ, height: cleanQ };
-  } else if (aspectRatio === '4:5') {
-    // 4:5 Portrait
-    const w = cleanQ;
-    const h = Math.round((cleanQ * 5) / 4 / 2) * 2;
-    return { width: w, height: h };
-  } else {
-    // 16:9 Landscape standard
-    const h = cleanQ;
-    const w = Math.round((cleanQ * 16) / 9 / 2) * 2;
-    return { width: w, height: h };
-  }
-}
-
-/**
- * Generates the FFmpeg video filter for cropping, aspect ratio padding, and resolution scaling.
+ * Generates the FFmpeg video filter for cropping and aspect ratio padding.
+ * Note: Quality is determined 100% by the downloaded stream; FFmpeg does not resize.
  */
 function buildVideoFilter(
   aspectRatio?: string,
   fitMode: 'crop' | 'pad' = 'pad',
   cropPosition: 'center' | 'left' | 'right' = 'center',
-  cropBox?: WorkerCropBox,
-  quality?: string
+  cropBox?: WorkerCropBox
 ): string {
   const filters: string[] = [];
 
@@ -166,13 +136,7 @@ function buildVideoFilter(
     }
   }
 
-  // 3. Exact Target Quality Scaling (ensures output pixel dimensions match user selection)
-  const isNatural16x9 = !aspectRatio || aspectRatio === '16:9' || aspectRatio === 'original';
-  if (quality && quality !== 'source' && quality !== 'best' && quality !== 'original' && (!isNatural16x9 || filters.length > 0)) {
-    const target = computeTargetDimensions(aspectRatio, quality);
-    filters.push(`scale=${target.width}:${target.height}`);
-  }
-
+  // Quality is determined 100% by the downloaded stream. FFmpeg only crops/frames.
   return filters.join(',');
 }
 
@@ -191,7 +155,7 @@ self.onmessage = async (e: MessageEvent) => {
       fitMode = 'pad',
       cropPosition = 'center',
       cropBox,
-      quality,
+      quality: _quality,
       audioBitrate = '192k',
     }: WorkerProcessPayload = payload;
 
@@ -244,7 +208,7 @@ self.onmessage = async (e: MessageEvent) => {
       instance.on('progress', progressHandler);
 
       const safeAudioBitrate = String(audioBitrate).endsWith('k') ? audioBitrate : '192k';
-      const filter = !isAudio ? buildVideoFilter(aspectRatio, fitMode, cropPosition, cropBox, quality) : '';
+      const filter = !isAudio ? buildVideoFilter(aspectRatio, fitMode, cropPosition, cropBox) : '';
 
       // Robust argument order for MPEG-TS streams:
       // Place input first with error tolerance, then seek offset and duration to prevent PTS mismatches

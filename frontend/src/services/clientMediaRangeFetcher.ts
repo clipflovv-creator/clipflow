@@ -210,28 +210,50 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
     return f.url && f.vcodec && f.vcodec !== 'none' && f.acodec && f.acodec !== 'none';
   });
 
-  // Helper to check if format is H.264/AVC1 in MP4
-  const isAvcMp4 = (f: any) => f.ext === 'mp4' || (f.vcodec && f.vcodec.startsWith('avc1'));
+  // Helper to check if format is H.264/AVC1 in MP4 (strictly exclude AV1 'av01' and VP9 which crash in WebAssembly FFmpeg)
+  const isAvcMp4 = (f: any) => {
+    if (!f || !f.vcodec || f.vcodec === 'none') return false;
+    const vc = f.vcodec.toLowerCase();
+    if (vc.startsWith('av01') || vc.startsWith('av1')) return false; // Strictly ban AV1 in browser
+    if (vc.startsWith('vp09') || vc.startsWith('vp9')) return false;
+    return vc.startsWith('avc') || vc.startsWith('h264') || (f.ext === 'mp4' && !vc.startsWith('vp'));
+  };
 
-  // Find best matching video stream:
-  // 1st priority: Exact height and H.264 MP4
-  let bestVideo = videoOnly.find((f) => getFormatHeight(f) === targetHeight && isAvcMp4(f));
-  // 2nd priority: Exact height any container
-  if (!bestVideo) {
-    bestVideo = videoOnly.find((f) => getFormatHeight(f) === targetHeight);
+  // Find best matching video stream directly corresponding to requested CDN quality tier:
+  const h264VideoOnly = videoOnly.filter(isAvcMp4);
+  const sortedH264 = [...h264VideoOnly].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+
+  let bestVideo: any = null;
+
+  if (isOriginal) {
+    // "original" / "source" selects the maximum native H.264 stream directly from the CDN
+    bestVideo = sortedH264[0] || videoOnly.find(isAvcMp4) || videoOnly[0] || null;
+  } else {
+    // 1st priority: Exact height and H.264 MP4
+    bestVideo = sortedH264.find((f) => getFormatHeight(f) === targetHeight);
+    // 2nd priority: Ultrawide tolerance (e.g. 1012 for 1080p, 676 for 720p, 450 for 480p, 338 for 360p)
+    if (!bestVideo) {
+      bestVideo = sortedH264.find((f) => Math.abs(getFormatHeight(f) - targetHeight) <= 80);
+    }
+    // 3rd priority: Closest height <= targetHeight (preferring H.264 MP4)
+    if (!bestVideo) {
+      bestVideo = sortedH264.find((f) => getFormatHeight(f) <= targetHeight) ||
+                  sortedH264[sortedH264.length - 1] || null;
+    }
+    // 4th priority: Any videoOnly matching targetHeight if no H.264
+    if (!bestVideo && videoOnly.length > 0) {
+      const sortedAll = [...videoOnly].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+      bestVideo = sortedAll.find((f) => getFormatHeight(f) === targetHeight) ||
+                  sortedAll.find((f) => getFormatHeight(f) <= targetHeight) ||
+                  sortedAll[0] || null;
+    }
   }
-  // 3rd priority: Closest height <= targetHeight (preferring MP4)
-  if (!bestVideo && videoOnly.length > 0) {
-    const sorted = [...videoOnly].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
-    bestVideo = sorted.find((f) => getFormatHeight(f) <= targetHeight && isAvcMp4(f)) ||
-                sorted.find((f) => getFormatHeight(f) <= targetHeight) ||
-                sorted[0] || null;
-  }
+
   // Fallback to combined if no separate video (Twitter, Instagram, etc.)
   if (!bestVideo && combined.length > 0) {
     const sortedCombined = [...combined].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
     bestVideo = sortedCombined.find((f) => getFormatHeight(f) === targetHeight && isAvcMp4(f)) ||
-                sortedCombined.find((f) => getFormatHeight(f) === targetHeight) ||
+                sortedCombined.find((f) => Math.abs(getFormatHeight(f) - targetHeight) <= 80 && isAvcMp4(f)) ||
                 sortedCombined.find((f) => getFormatHeight(f) <= targetHeight && isAvcMp4(f)) ||
                 sortedCombined.find((f) => getFormatHeight(f) <= targetHeight) ||
                 sortedCombined[0] || null;

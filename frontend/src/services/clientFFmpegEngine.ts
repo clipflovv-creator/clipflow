@@ -319,9 +319,7 @@ function buildVideoFilter(
   aspectRatio: string = '16:9',
   fitMode: 'crop' | 'pad' = 'pad',
   cropPosition: 'center' | 'left' | 'right' = 'center',
-  cropBox?: { x: number; y: number; width: number; height: number },
-  quality?: string,
-  sourceHeight?: number
+  cropBox?: { x: number; y: number; width: number; height: number }
 ): string | null {
   const filters: string[] = [];
 
@@ -375,22 +373,8 @@ function buildVideoFilter(
     }
   }
 
-  // 3. Exact Target Quality Scaling (ensures output pixel dimensions match user selection)
-  if (quality && quality !== 'source' && quality !== 'best' && quality !== 'original') {
-    const target = computeTargetDimensions(aspectRatio, quality);
-    const isNatural16x9 = !aspectRatio || aspectRatio === '16:9' || aspectRatio === 'original';
-    // If standard 16:9 video with no cropping, and input stream is already exact target height, skip scaling for lossless stream copy.
-    // Also skip scaling if source height <= target height to prevent ugly upscaling & slow CPU transcode.
-    const alreadyMatches = isNatural16x9 && filters.length === 0 && (
-      !sourceHeight ||
-      sourceHeight === target.height ||
-      sourceHeight <= target.height
-    );
-    if (!alreadyMatches) {
-      filters.push(`scale=${target.width}:${target.height}`);
-    }
-  }
-
+  // Note: Quality is determined 100% directly from the stream downloaded from the CDN.
+  // FFmpeg ONLY handles framing and cropping. Never scale/downsample video in FFmpeg.
   return filters.length > 0 ? filters.join(',') : null;
 }
 
@@ -405,12 +389,12 @@ export class ClientFFmpegEngine {
       trimStart = 0,
       trimEnd,
       format = 'mp4',
-      quality = '1080p',
+      quality: _quality = '1080p',
       aspectRatio = '16:9',
       fitMode = 'pad',
       cropPosition = 'center',
       cropBox,
-      videoHeight,
+      videoHeight: _videoHeight,
       onProgress,
     } = options;
 
@@ -506,7 +490,7 @@ export class ClientFFmpegEngine {
       await ffmpeg.writeFile('input_a.m4a', audioSlice.bytes);
     }
 
-    const videoFilter = buildVideoFilter(aspectRatio, fitMode, cropPosition, cropBox, quality, videoHeight);
+    const videoFilter = buildVideoFilter(aspectRatio, fitMode, cropPosition, cropBox);
     const outName = 'output.mp4';
     try { await ffmpeg.deleteFile(outName); } catch {}
 
