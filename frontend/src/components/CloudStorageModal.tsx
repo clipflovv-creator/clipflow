@@ -12,12 +12,7 @@ import {
   FileVideo,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-
-const BACKEND_URL =
-  (import.meta.env.VITE_BACKEND_URL as string) ||
-  (typeof window !== 'undefined' && window.location.port !== '5173'
-    ? window.location.origin
-    : 'http://localhost:3001');
+import { api } from '../services/api';
 
 export interface DriveFile {
   id: string;
@@ -74,17 +69,13 @@ export const CloudStorageModal: React.FC<CloudStorageModalProps> = ({ isOpen, on
 
     try {
       // Fetch Files
-      const filesRes = await fetch(`${BACKEND_URL}/api/drive/files`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const filesRes = await api.drive.getFiles(token);
       const filesData = await filesRes.json();
       if (filesData.error) throw new Error(filesData.error);
       setFiles(filesData.files || []);
 
       // Fetch Quota
-      const quotaRes = await fetch(`${BACKEND_URL}/api/drive/quota`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const quotaRes = await api.drive.getQuota(token);
       const quotaData = await quotaRes.json();
       if (quotaData.quota) {
         setQuota(quotaData.quota);
@@ -110,10 +101,7 @@ export const CloudStorageModal: React.FC<CloudStorageModalProps> = ({ isOpen, on
     setSuccessMessage(null);
 
     try {
-      const res = await fetch(`${BACKEND_URL}/api/drive/files/${fileId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await api.drive.deleteFile(fileId, token);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
@@ -122,9 +110,7 @@ export const CloudStorageModal: React.FC<CloudStorageModalProps> = ({ isOpen, on
       setSuccessMessage('File deleted successfully');
 
       // Refresh Quota
-      const quotaRes = await fetch(`${BACKEND_URL}/api/drive/quota`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const quotaRes = await api.drive.getQuota(token);
       const quotaData = await quotaRes.json();
       if (quotaData.quota) {
         setQuota(quotaData.quota);

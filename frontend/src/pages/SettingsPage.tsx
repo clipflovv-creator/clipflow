@@ -16,14 +16,9 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
 import { EditorSidebar } from '../components/EditorSidebar';
 import { UserProfileMenu } from '../components/UserProfileMenu';
-
-const BACKEND_URL =
-  (import.meta.env.VITE_BACKEND_URL as string) ||
-  (typeof window !== 'undefined' && window.location.port !== '5173'
-    ? window.location.origin
-    : 'http://localhost:3001');
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -78,12 +73,7 @@ export default function SettingsPage() {
     setIsSavingName(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/profile`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ name: fullName.trim() }),
-      });
+      const res = await api.auth.updateProfile({ name: fullName.trim() });
       const data = await res.json();
       if (res.ok) {
         setSuccessMsg('Full name updated successfully.');
@@ -123,12 +113,7 @@ export default function SettingsPage() {
     setIsSavingEmail(true);
     setErrorMsg(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/profile`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: trimmed }),
-      });
+      const res = await api.auth.updateProfile({ email: trimmed });
       const data = await res.json();
       if (res.ok) {
         setEmailBackup(trimmed);
@@ -200,12 +185,7 @@ export default function SettingsPage() {
 
     setIsSavingPassword(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/change-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
+      const res = await api.auth.changePassword(currentPassword, newPassword);
 
       const data = await res.json();
       if (!res.ok) {

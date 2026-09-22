@@ -2,11 +2,7 @@ import { useState, useRef, useMemo, useCallback } from 'react';
 import { getCachedMetadata, setCachedMetadata } from '../../utils/metadataCache';
 import { isTwitchLiveChannelUrl } from '../../components/Twitch/useTwitchLiveChannel';
 import { extractYouTubeId } from '../../utils/platforms';
-
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
-  ((typeof window !== 'undefined' && window.location.port !== '5173')
-    ? window.location.origin
-    : 'http://localhost:3001');
+import { api } from '../../services/api';
 
 export interface QualityOption {
   label: string;
@@ -142,12 +138,7 @@ export function useEditorMetadata(
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 30000);
           try {
-            const res = await fetch(`${BACKEND_URL}/api/video/metadata`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url: cleanTargetUrl }),
-              signal: controller.signal,
-            });
+            const res = await api.video.getMetadata(cleanTargetUrl, controller.signal);
             clearTimeout(timeoutId);
             if (!res.ok) {
               const errJson = await res.json().catch(() => ({}));

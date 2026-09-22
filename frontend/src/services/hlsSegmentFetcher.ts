@@ -42,6 +42,7 @@ export interface SegmentFetchProgress {
 }
 
 import { resolveRelayUrl } from './clientMediaRangeFetcher.js';
+import { api } from './api';
 
 /**
  * Resolves a relative or absolute URL against a base URL.
@@ -65,7 +66,7 @@ export async function parseHlsManifest(
   let targetManifestUrl = manifestUrl;
   if (
     (targetManifestUrl.includes('cloudfront.net') || targetManifestUrl.includes('ttvnw.net')) &&
-    !targetManifestUrl.includes('/api/video/')
+    !api.video.isProxiedUrl(targetManifestUrl)
   ) {
     targetManifestUrl = resolveRelayUrl(targetManifestUrl);
   }
@@ -292,7 +293,7 @@ export async function fetchRequiredHlsSegments(
       let fetchUrl = resolvedInitUrl;
       if (
         (fetchUrl.includes('cloudfront.net') || fetchUrl.includes('ttvnw.net')) &&
-        !fetchUrl.includes('/api/video/')
+        !api.video.isProxiedUrl(fetchUrl)
       ) {
         fetchUrl = resolveRelayUrl(fetchUrl);
       }
@@ -316,7 +317,7 @@ export async function fetchRequiredHlsSegments(
     let fetchUrl = item.resolvedUrl;
     if (
       (fetchUrl.includes('cloudfront.net') || fetchUrl.includes('ttvnw.net')) &&
-      !fetchUrl.includes('/api/video/')
+      !api.video.isProxiedUrl(fetchUrl)
     ) {
       fetchUrl = resolveRelayUrl(fetchUrl);
     }

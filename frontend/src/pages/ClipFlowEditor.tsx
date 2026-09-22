@@ -37,11 +37,7 @@ import { useEditorMetadata } from '../hooks/editor/useEditorMetadata';
 import { useEditorPlayback } from '../hooks/editor/useEditorPlayback';
 
 import { resolveRelayUrl, getAudioTrackScore } from '../services/clientMediaRangeFetcher.js';
-
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
-  ((typeof window !== 'undefined' && window.location.port !== '5173')
-    ? window.location.origin
-    : 'http://localhost:3001');
+import { api } from '../services/api';
 
 function formatTime(seconds: number, includeDecimals: boolean = false): string {
   if (isNaN(seconds) || seconds < 0) return '00:00';
@@ -444,7 +440,7 @@ export default function ClipFlowEditor() {
 
     let audioUrl = audioTrack.url;
     if (isTwitter || isInstagram || audioUrl.includes('twimg.com') || audioUrl.includes('cdninstagram.com') || audioUrl.includes('instagram.com') || useProxyFallback) {
-      return `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(audioUrl)}`;
+      return api.video.getProxyStreamUrl(audioUrl);
     }
     return audioUrl;
   }, [metadata, activeVideoHasAudio, youtubeId, isInstagram, isTwitter, useProxyFallback]);
@@ -688,7 +684,7 @@ export default function ClipFlowEditor() {
 
         if (!blob) {
           try {
-            const proxyUrl = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(thumbUrl)}`;
+            const proxyUrl = api.video.getProxyStreamUrl(thumbUrl);
             const res = await fetch(proxyUrl);
             if (res.ok) blob = await res.blob();
           } catch {}
@@ -780,10 +776,25 @@ export default function ClipFlowEditor() {
         if (isLiveChannelUrl) {
           const chunkOffset = Math.floor(targetTime / 5) * 5;
           const localTime = +(targetTime - chunkOffset).toFixed(3);
-          backendUrl = `${BACKEND_URL}/api/twitch-live/live-frame?url=${encodeURIComponent(activeUrl)}&chunkOffset=${chunkOffset}&localTime=${localTime}&globalTime=${targetTime}&quality=${encodeURIComponent(downloadQuality)}&download=true&format=png&title=${encodeURIComponent(cleanTitle)}${cropParam}`;
+          backendUrl = api.twitch.getLiveFrameUrl({
+            url: activeUrl,
+            chunkOffset,
+            localTime,
+            targetTime,
+            quality: downloadQuality,
+            cleanTitle,
+            cropParam,
+          });
         } else {
           const streamParam = rawPreviewSrc ? `&streamUrl=${encodeURIComponent(rawPreviewSrc)}` : '';
-          backendUrl = `${BACKEND_URL}/api/video/frame?url=${encodeURIComponent(activeUrl)}&time=${targetTime}&quality=${encodeURIComponent(downloadQuality)}&download=true&fullRes=true&format=png&title=${encodeURIComponent(cleanTitle)}${cropParam}${streamParam}`;
+          backendUrl = api.video.getFrameUrl({
+            url: activeUrl,
+            time: targetTime,
+            quality: downloadQuality,
+            cleanTitle,
+            cropParam,
+            streamParam,
+          });
         }
 
         const res = await fetch(backendUrl);
@@ -833,19 +844,15 @@ export default function ClipFlowEditor() {
       // 0. Dedicated Subtitle / Caption Export Pipeline (SRT, VTT, TXT)
       if (downloadFormat === 'captions') {
         setStatusMessage(`📝 Extracting and trimming ${captionFormat.toUpperCase()} subtitles...`);
-        const res = await fetch(`${BACKEND_URL}/api/video/download`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: activeUrl,
-            format: captionFormat,
-            captionLang: captionLang || 'auto',
-            trimStart: effectiveTrimStart,
-            trimEnd: effectiveTrimEnd,
-            customFileName: customFileName || metadata?.title || 'Subtitles',
-            relativeTimecodes: true,
-            mode: 'server',
-          }),
+        const res = await api.video.download({
+          url: activeUrl,
+          format: captionFormat,
+          captionLang: captionLang || 'auto',
+          trimStart: effectiveTrimStart,
+          trimEnd: effectiveTrimEnd,
+          customFileName: customFileName || metadata?.title || 'Subtitles',
+          relativeTimecodes: true,
+          mode: 'server',
         });
 
         if (!res.ok) {
@@ -854,7 +861,7 @@ export default function ClipFlowEditor() {
         }
 
         const data = await res.json();
-        const fileRes = await fetch(`${BACKEND_URL}${data.downloadUrl}`);
+        const fileRes = await api.video.fetchFile(data.downloadUrl);
         if (!fileRes.ok) throw new Error('Failed to retrieve generated subtitle file from server');
         const blob = await fileRes.blob();
 
@@ -930,23 +937,19 @@ export default function ClipFlowEditor() {
           console.warn('[Twitch Export] In-browser export failed, falling back to server export engine:', browserTwitchErr);
           setStatusMessage('⚡ In-browser render failed. Falling back to high-speed cloud renderer...');
 
-          const res = await fetch(`${BACKEND_URL}/api/video/download`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              url: activeUrl,
-              format: effectiveFormat,
-              quality: downloadQuality,
-              audioBitrate: downloadAudioBitrate,
-              trimStart: effectiveTrimStart,
-              trimEnd: effectiveTrimEnd,
-              aspectRatio: (aspectRatio === '16:9' && !cropBox) ? undefined : aspectRatio,
-              fitMode,
-              cropPosition,
-              cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
-              customFileName: customFileName || metadata?.title || 'Twitch_Clip',
-              mode: 'server',
-            }),
+          const res = await api.video.download({
+            url: activeUrl,
+            format: effectiveFormat,
+            quality: downloadQuality,
+            audioBitrate: downloadAudioBitrate,
+            trimStart: effectiveTrimStart,
+            trimEnd: effectiveTrimEnd,
+            aspectRatio: (aspectRatio === '16:9' && !cropBox) ? undefined : aspectRatio,
+            fitMode,
+            cropPosition,
+            cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
+            customFileName: customFileName || metadata?.title || 'Twitch_Clip',
+            mode: 'server',
           });
 
           if (!res.ok) {
@@ -956,7 +959,7 @@ export default function ClipFlowEditor() {
 
           const data = await res.json();
           if (data.downloadUrl) {
-            const fileRes = await fetch(`${BACKEND_URL}${data.downloadUrl}`);
+            const fileRes = await api.video.fetchFile(data.downloadUrl);
             if (!fileRes.ok) throw new Error('Failed to retrieve clip from server');
             const blob = await fileRes.blob();
             const blobUrl = URL.createObjectURL(blob);
@@ -1012,23 +1015,19 @@ export default function ClipFlowEditor() {
         console.warn('[ClipFlow Editor] In-browser export engine encountered error, falling back to server engine:', browserExportErr);
         setStatusMessage('⚡ In-browser render exceeded limit. Processing with cloud engine...');
 
-        const res = await fetch(`${BACKEND_URL}/api/video/download`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: activeUrl,
-            format: effectiveFormat,
-            quality: downloadQuality,
-            audioBitrate: downloadAudioBitrate,
-            trimStart: effectiveTrimStart,
-            trimEnd: effectiveTrimEnd,
-            aspectRatio: (aspectRatio === '16:9' && !cropBox) ? undefined : aspectRatio,
-            fitMode,
-            cropPosition,
-            cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
-            customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
-            mode: 'server',
-          }),
+        const res = await api.video.download({
+          url: activeUrl,
+          format: effectiveFormat,
+          quality: downloadQuality,
+          audioBitrate: downloadAudioBitrate,
+          trimStart: effectiveTrimStart,
+          trimEnd: effectiveTrimEnd,
+          aspectRatio: (aspectRatio === '16:9' && !cropBox) ? undefined : aspectRatio,
+          fitMode,
+          cropPosition,
+          cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
+          customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
+          mode: 'server',
         });
 
         if (!res.ok) {
@@ -1038,7 +1037,7 @@ export default function ClipFlowEditor() {
 
         const data = await res.json();
         if (data.downloadUrl) {
-          const fileRes = await fetch(`${BACKEND_URL}${data.downloadUrl}`);
+          const fileRes = await api.video.fetchFile(data.downloadUrl);
           if (!fileRes.ok) throw new Error('Failed to retrieve clip from server');
           const blob = await fileRes.blob();
           const blobUrl = URL.createObjectURL(blob);

@@ -1,9 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
-  ((typeof window !== 'undefined' && window.location.port !== '5173')
-    ? window.location.origin
-    : 'http://localhost:3001');
+import { api } from '../../services/api';
 
 export interface TwitchQualityOption {
   id: string;
@@ -81,10 +77,11 @@ export function useTwitchPreview(
     });
 
     try {
-      const qualityParam = quality ? `&quality=${encodeURIComponent(quality)}` : '';
-      const refreshParam = forceRefresh ? '&forceRefresh=true' : '';
-      const endpoint = `${BACKEND_URL}/api/twitch-live/stream-info?url=${encodeURIComponent(targetUrl)}${qualityParam}${refreshParam}`;
-      const res = await fetch(endpoint, { signal: abortController.signal });
+      const res = await api.twitch.getStreamInfo(targetUrl, {
+        quality,
+        forceRefresh,
+        signal: abortController.signal,
+      });
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));

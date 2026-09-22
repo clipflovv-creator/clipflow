@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
 import { UserProfileMenu } from '../components/UserProfileMenu';
 import { EditorSidebar } from '../components/EditorSidebar';
 
@@ -25,12 +26,6 @@ interface CloudVideo {
   driveFileId: string;
   createdAt: string;
 }
-
-const BACKEND_URL =
-  (import.meta.env.VITE_BACKEND_URL as string) ||
-  (typeof window !== 'undefined' && window.location.port !== '5173'
-    ? window.location.origin
-    : 'http://localhost:3001');
 
 export default function CloudStoragePage() {
   const navigate = useNavigate();
@@ -83,9 +78,7 @@ export default function CloudStoragePage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/videos`, {
-        credentials: 'include',
-      });
+      const res = await api.cloudStorage.getVideos();
       const data = await res.json();
       if (res.ok && data.videos) {
         setVideos(data.videos);
@@ -118,10 +111,7 @@ export default function CloudStoragePage() {
     setDeletingId(videoId);
     setError(null);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/videos/${videoId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
+      const res = await api.cloudStorage.deleteVideo(videoId);
 
       if (!res.ok) {
         const data = await res.json();
@@ -139,9 +129,9 @@ export default function CloudStoragePage() {
   };
 
   const handleDownload = async (videoId: string, fileName?: string) => {
-    const downloadUrl = `${BACKEND_URL}/api/videos/${videoId}/download`;
+    const downloadUrl = api.cloudStorage.getVideoDownloadUrl(videoId);
     try {
-      const res = await fetch(downloadUrl, { credentials: 'include' });
+      const res = await api.cloudStorage.downloadVideoBlob(videoId);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const blobUrl = window.URL.createObjectURL(blob);

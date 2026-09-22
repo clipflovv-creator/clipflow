@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { api } from '../services/api';
 
 export type UserPlan = 'free' | 'pro' | 'business';
 
@@ -61,12 +62,6 @@ interface AuthContextType {
   refreshUser: () => Promise<void>;
 }
 
-const BACKEND_URL =
-  (import.meta.env.VITE_BACKEND_URL as string) ||
-  (typeof window !== 'undefined' && window.location.port !== '5173'
-    ? window.location.origin
-    : 'http://localhost:3001');
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -76,9 +71,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Fetch current authenticated user info via HttpOnly session cookie
   const fetchCurrentUser = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/me`, {
-        credentials: 'include', // Automatically attaches HttpOnly session cookie
-      });
+      const res = await api.auth.getMe();
 
       if (res.ok) {
         const data = await res.json();
@@ -106,12 +99,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = async (email: string, password: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email, password }),
-      });
+      const res = await api.auth.login(email, password);
 
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -140,12 +128,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     plan: UserPlan = 'free'
   ) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email, password, name, plan }),
-      });
+      const res = await api.auth.register({ email, password, name, plan });
 
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -172,22 +155,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = async () => {
     try {
-      await fetch(`${BACKEND_URL}/api/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      });
+      await api.auth.logout();
     } catch (_) {}
     setUser(null);
   };
 
   const verifyEmail = async (token: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/verify-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ token }),
-      });
+      const res = await api.auth.verifyEmail(token);
 
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -209,12 +184,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const resendVerification = async (email: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/resend-verification`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email }),
-      });
+      const res = await api.auth.resendVerification(email);
 
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -229,12 +199,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const forgotPassword = async (email: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email }),
-      });
+      const res = await api.auth.forgotPassword(email);
 
       const data = await res.json();
       return {
@@ -254,12 +219,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const token = maybeNewPassword ? newPasswordOrCode : tokenOrEmail;
     const newPassword = maybeNewPassword || newPasswordOrCode;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ token, newPassword }),
-      });
+      const res = await api.auth.resetPassword(token, newPassword);
 
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -281,12 +241,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const changePassword = async (currentPassword: string, newPassword: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/change-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
+      const res = await api.auth.changePassword(currentPassword, newPassword);
 
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -301,12 +256,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const selectPlan = async (plan: UserPlan) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/select-plan`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ plan }),
-      });
+      const res = await api.auth.selectPlan(plan);
 
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -328,26 +278,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const connectGoogleDrive = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/google/connect?format=json`, {
-        credentials: 'include',
-      });
+      const res = await api.google.getConnectUrlJson();
       const data = await res.json();
       if (data.url) {
         window.location.href = data.url;
       } else {
-        window.location.href = `${BACKEND_URL}/api/google/connect`;
+        window.location.href = api.google.getConnectUrl();
       }
     } catch {
-      window.location.href = `${BACKEND_URL}/api/google/connect`;
+      window.location.href = api.google.getConnectUrl();
     }
   };
 
   const disconnectGoogleDrive = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/google/disconnect`, {
-        method: 'POST',
-        credentials: 'include',
-      });
+      const res = await api.google.disconnect();
       const data = await res.json();
       if (!res.ok || data.error) {
         return { success: false, error: data.error || 'Failed to disconnect Cloud Storage' };

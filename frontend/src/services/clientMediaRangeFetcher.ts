@@ -6,15 +6,11 @@
  */
 
 import * as MP4Box from 'mp4box';
+import { api } from './api';
 
 // Edge Relay URL (if deployed on Cloudflare Workers, set VITE_EDGE_RELAY_URL in frontend/.env)
 // Example: https://yt-range-relay.yourname.workers.dev
 const EDGE_RELAY_URL = (import.meta.env.VITE_EDGE_RELAY_URL as string) || '';
-
-const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL as string) ||
-  ((typeof window !== 'undefined' && window.location.port !== '5173')
-    ? window.location.origin
-    : 'http://localhost:3001');
 
 /**
  * Wraps a direct media stream URL (e.g. Googlevideo) with CORS proxy / Edge Relay.
@@ -34,7 +30,7 @@ export function resolveRelayUrl(directUrl: string): string {
   }
 
   // 2. Dev / Fallback: Backend streaming range proxy (Pipes directly without disk storage)
-  return `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(directUrl)}`;
+  return api.video.getProxyStreamUrl(directUrl);
 }
 
 /**
