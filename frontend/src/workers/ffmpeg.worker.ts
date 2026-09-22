@@ -43,39 +43,41 @@ export interface WorkerProcessPayload {
 async function loadFFmpeg() {
   if (ffmpeg && isLoaded) return ffmpeg;
 
-  ffmpeg = new FFmpeg();
-
-  ffmpeg.on('log', ({ message }) => {
-    logHistory.push(message);
-    if (logHistory.length > 100) logHistory.shift();
-    console.log(`[FFmpeg.wasm Worker] ${message}`);
-  });
-
-  try {
-    // 1. Try local self-hosted core files first (instant load from public/ffmpeg)
-    const origin = typeof location !== 'undefined' ? location.origin : '';
-    const coreURL = `${origin}/ffmpeg/ffmpeg-core.js`;
-    const wasmURL = `${origin}/ffmpeg/ffmpeg-core.wasm`;
-
-    console.log('[FFmpeg.wasm Worker] Loading local core:', { coreURL, wasmURL });
-    await ffmpeg.load({
-      coreURL: await toBlobURL(coreURL, 'text/javascript'),
-      wasmURL: await toBlobURL(wasmURL, 'application/wasm'),
+  const initFFmpeg = () => {
+    const f = new FFmpeg();
+    f.on('log', ({ message }) => {
+      logHistory.push(message);
+      if (logHistory.length > 100) logHistory.shift();
+      console.log(`[FFmpeg.wasm Worker] ${message}`);
     });
-    isLoaded = true;
-    console.log('[FFmpeg.wasm Worker ✅] Loaded successfully from local origin');
-    return ffmpeg;
-  } catch (localErr: any) {
-    console.warn('[FFmpeg.wasm Worker ⚠️] Local core load failed, falling back to CDN:', localErr.message);
+    return f;
+  };
 
-    // 2. Fallback to unpkg CDN
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
+  ffmpeg = initFFmpeg();
+
+  // Load single-threaded FFmpeg wasm core from unpkg CDN
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
+  try {
+    console.log('[FFmpeg.wasm Worker] Loading core from CDN:', baseURL);
     await ffmpeg.load({
       coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
       wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
     });
     isLoaded = true;
     console.log('[FFmpeg.wasm Worker ✅] Loaded successfully from CDN');
+    return ffmpeg;
+  } catch (cdnErr: any) {
+    console.warn('[FFmpeg.wasm Worker ⚠️] Primary CDN load failed, falling back to jsdelivr:', cdnErr?.message || cdnErr);
+
+    // Fallback to jsdelivr CDN with fresh FFmpeg instance
+    const fallbackURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
+    ffmpeg = initFFmpeg();
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
+    isLoaded = true;
+    console.log('[FFmpeg.wasm Worker ✅] Loaded successfully from backup CDN');
     return ffmpeg;
   }
 }

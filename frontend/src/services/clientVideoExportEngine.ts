@@ -8,6 +8,7 @@
 
 import { findBestTracks } from './clientMediaRangeFetcher';
 import { ClientFFmpegEngine } from './clientFFmpegEngine';
+import { api } from './api';
 
 export interface ClientExportOptions {
   metadata: any;
@@ -79,10 +80,35 @@ export class ClientVideoExportEngine {
       .trim();
 
     // Select the best direct video and audio tracks
-    const tracks = findBestTracks(metadata, quality);
+    let currentMetadata = metadata;
+    let tracks = findBestTracks(currentMetadata, quality);
 
-    const videoStreamUrl = tracks.videoFormat?.url || tracks.combinedFormat?.url || metadata?.direct_stream_url || metadata?.url;
+    // If formats are missing (e.g. from an earlier lightweight load or fallback), fetch full metadata from backend
+    if (!tracks.videoFormat && !tracks.combinedFormat) {
+      const pageUrl = currentMetadata?.webpage_url || currentMetadata?.url;
+      if (pageUrl && (pageUrl.includes('youtube.com') || pageUrl.includes('youtu.be') || pageUrl.includes('twitch.tv'))) {
+        if (onProgress) onProgress('🔍 Retrieving high-resolution video streams...', 5);
+        try {
+          const res = await api.video.getMetadata(pageUrl);
+          if (res.ok) {
+            const freshMeta = await res.json();
+            if (freshMeta?.formats && freshMeta.formats.length > 0) {
+              currentMetadata = freshMeta;
+              tracks = findBestTracks(currentMetadata, quality);
+            }
+          }
+        } catch (fetchErr) {
+          console.warn('[ClientVideoExportEngine] Stream metadata refresh failed:', fetchErr);
+        }
+      }
+    }
+
+    const videoStreamUrl = tracks.videoFormat?.url || tracks.combinedFormat?.url || currentMetadata?.direct_stream_url;
     let audioStreamUrl = tracks.audioFormat?.url || (tracks.combinedFormat ? tracks.combinedFormat.url : null);
+
+    if (!videoStreamUrl) {
+      throw new Error('Direct video stream format not found. Please reload the video or verify backend connectivity.');
+    }
 
     // If audioStreamUrl points to the exact same file as videoStreamUrl,
     // or if the chosen video format already contains embedded audio, no separate audio stream is needed.

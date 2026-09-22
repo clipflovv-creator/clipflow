@@ -114,10 +114,10 @@ export function useEditorMetadata(
       setIsLoadingMeta(false);
     }
 
-    // 2. Check metadata cache for instant display
+    // 2. Check metadata cache for instant display (only if it has real playable stream formats)
     if (!forceRefresh && !isTwitchLiveNow) {
       const cached = getCachedMetadata(cleanTargetUrl);
-      if (cached && !cached._synthetic) {
+      if (cached && !cached._synthetic && Array.isArray(cached.formats) && cached.formats.length > 0) {
         setMetadata(cached);
         setQualityOptions(buildQualityOptions(cached));
         setIsLoadingMeta(false);
@@ -147,7 +147,7 @@ export function useEditorMetadata(
             return await res.json();
           } catch (err: any) {
             clearTimeout(timeoutId);
-            // Fallback for YouTube if backend fails
+            // Fallback for YouTube preview info only (mark as synthetic so it is never cached as real streams)
             const ytId = extractYouTubeId(cleanTargetUrl);
             if (ytId) {
               try {
@@ -162,6 +162,7 @@ export function useEditorMetadata(
                     duration: 0,
                     duration_string: '00:00',
                     formats: [],
+                    _synthetic: true,
                   };
                 }
               } catch (_) {}
@@ -179,7 +180,9 @@ export function useEditorMetadata(
       const data = await fetchPromise;
       if (data) {
         setMetadata(data);
-        setCachedMetadata(cleanTargetUrl, data);
+        if (!data._synthetic && Array.isArray(data.formats) && data.formats.length > 0) {
+          setCachedMetadata(cleanTargetUrl, data);
+        }
         setQualityOptions(buildQualityOptions(data));
       }
     } catch (err: any) {

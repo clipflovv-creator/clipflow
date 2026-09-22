@@ -1020,44 +1020,30 @@ export default function ClipFlowEditor() {
         });
 
         console.log('[ClipFlow Studio EXPORT SUCCESS]', exportResult);
-      } catch (browserExportErr: any) {
-        console.warn('[ClipFlow Editor] In-browser export engine encountered error, falling back to server engine:', browserExportErr);
-        setStatusMessage('⚡ In-browser render exceeded limit. Processing with cloud engine...');
+        setDownloadStatus('success');
+        setStatusMessage('🎉 Clip processed and downloaded directly to your device!');
 
-        const res = await api.video.download({
+        setTimeout(() => {
+          setStatusMessage('');
+          setDownloadStatus('idle');
+        }, 3000);
+
+        saveToHistory({
+          title: customFileName || metadata?.title || 'ClipFlow Video',
           url: activeUrl,
+          platform: 'youtube',
           format: effectiveFormat,
           quality: downloadQuality,
-          audioBitrate: downloadAudioBitrate,
-          trimStart: effectiveTrimStart,
-          trimEnd: effectiveTrimEnd,
-          aspectRatio: (aspectRatio === '16:9' && !cropBox) ? undefined : aspectRatio,
-          fitMode,
-          cropPosition,
-          cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
-          customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
-          mode: 'server',
+          duration: Math.max(1, effectiveTrimEnd - effectiveTrimStart),
         });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `Server export failed (${res.status})`);
-        }
-
-        const data = await res.json();
-        if (data.downloadUrl) {
-          const fileRes = await api.video.fetchFile(data.downloadUrl);
-          if (!fileRes.ok) throw new Error('Failed to retrieve clip from server');
-          const blob = await fileRes.blob();
-          const blobUrl = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = blobUrl;
-          a.download = data.fileName || `${customFileName || 'video_clip'}.${effectiveFormat}`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-        }
+        return;
+      } catch (browserExportErr: any) {
+        console.warn('[ClipFlow Editor] In-browser export engine encountered error:', browserExportErr);
+        const errMsg = browserExportErr?.message || 'In-browser render failed';
+        setDownloadStatus('idle');
+        setStatusMessage(`❌ Export error: ${errMsg}`);
+        setTimeout(() => setStatusMessage(''), 6000);
+        return;
       }
 
       setDownloadStatus('success');

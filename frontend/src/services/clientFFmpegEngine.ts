@@ -53,29 +53,35 @@ export async function getFFmpeg(onProgress?: (stage: string, percent: number) =>
   loadPromise = (async () => {
     if (onProgress) onProgress('⚡ Loading in-browser FFmpeg engine...', 5);
 
-    const ffmpeg = new FFmpeg();
-    ffmpegInstance = ffmpeg;
-
-    // Load single-threaded FFmpeg wasm core from fast CDN
+    // 1. Try unpkg CDN
     const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
     try {
+      const ffmpeg = new FFmpeg();
       await ffmpeg.load({
         coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
         wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
       });
+      ffmpegInstance = ffmpeg;
       isLoaded = true;
       return ffmpeg;
     } catch (primaryErr) {
       console.warn('[ClientFFmpegEngine] Primary CDN load failed, trying backup CDN:', primaryErr);
       const fallbackURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm';
-      await ffmpeg.load({
+      const fallbackFFmpeg = new FFmpeg();
+      await fallbackFFmpeg.load({
         coreURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.js`, 'text/javascript'),
         wasmURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.wasm`, 'application/wasm'),
       });
+      ffmpegInstance = fallbackFFmpeg;
       isLoaded = true;
-      return ffmpeg;
+      return fallbackFFmpeg;
     }
-  })();
+  })().catch((err) => {
+    loadPromise = null;
+    ffmpegInstance = null;
+    isLoaded = false;
+    throw err;
+  });
 
   return await loadPromise;
 }
