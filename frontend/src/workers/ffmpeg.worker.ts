@@ -292,11 +292,16 @@ self.onmessage = async (e: MessageEvent) => {
             await instance.deleteFile(internalInput);
             await instance.deleteFile(internalOutput);
           } catch {}
-          self.postMessage({
-            type: 'DONE',
-            jobId,
-            payload: { outputData, fileName: outputFileName },
-          });
+          (self as unknown as Worker).postMessage(
+            {
+              type: 'COMPLETE',
+              jobId,
+              outputData,
+              outputFileName,
+              format,
+            },
+            [outputData.buffer]
+          );
           return;
         }
         console.warn('[FFmpeg.wasm Worker] Fast copy returned non-zero code', copyCode, '- falling back to transcode');

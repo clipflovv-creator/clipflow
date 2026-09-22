@@ -119,12 +119,19 @@ export async function exportTwitchClipInBrowser(
 
       if (type === 'PROGRESS') {
         if (onProgress) onProgress(message || 'Processing clip...', percent || 50);
-      } else if (type === 'COMPLETE') {
+      } else if (type === 'COMPLETE' || type === 'DONE') {
         hasResolved = true;
         if (onProgress) onProgress('Complete! Preparing download...', 100);
 
+        const rawData = outputData || e.data?.payload?.outputData;
+        if (!rawData) {
+          cleanup();
+          reject(new Error('Export completed but output file data is empty'));
+          return;
+        }
+
         const mimeType = cleanExt === 'mp3' ? 'audio/mpeg' : cleanExt === 'wav' ? 'audio/wav' : 'video/mp4';
-        const blob = new Blob([outputData], { type: mimeType });
+        const blob = new Blob([rawData], { type: mimeType });
 
         console.log('%c[Browser Twitch Exporter ✅ EXPORT COMPLETE]', 'color: #22c55e; font-weight: bold;', {
           fileName: outputFileName,

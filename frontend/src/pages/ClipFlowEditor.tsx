@@ -5,7 +5,6 @@ import {
   AlertCircle, Film, Check, X, HardDrive, Download
 } from 'lucide-react';
 import type { YouTubePlayer } from 'react-youtube';
-import { io, type Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import { CloudStorageModal } from '../components/CloudStorageModal';
 import { AuthModal } from '../components/AuthModal';
@@ -78,7 +77,7 @@ export default function ClipFlowEditor() {
   const [newUrlInput, setNewUrlInput] = useState('');
   const [showUrlChange, setShowUrlChange] = useState(!rawUrl && !initialSession?.activeUrl);
 
-  const { token, isAuthenticated, isPro } = useAuth();
+  const { isPro } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showCloudStorageModal, setShowCloudStorageModal] = useState(false);
   const [showCompanionModal, setShowCompanionModal] = useState(false);
@@ -449,22 +448,7 @@ export default function ClipFlowEditor() {
     return audioUrl;
   }, [metadata, activeVideoHasAudio, youtubeId, isInstagram, isTwitter, useProxyFallback]);
 
-  // Socket.io for cloud export progress
-  const socketRef = useRef<Socket | null>(null);
 
-  useEffect(() => {
-    const socket = io(BACKEND_URL, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionDelay: 1000,
-    });
-    socketRef.current = socket;
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, []);
 
   // Splitter Dragging Listeners
   useEffect(() => {
@@ -835,10 +819,6 @@ export default function ClipFlowEditor() {
   // Main Export Handler
   const handleExportDownload = async () => {
     if (isDownloading) return;
-    if (exportMode === 'pro' && !isAuthenticated) {
-      setShowAuthModal(true);
-      return;
-    }
 
     setIsDownloading(true);
     setDownloadStatus('running');
@@ -889,28 +869,6 @@ export default function ClipFlowEditor() {
         setDownloadStatus('success');
         setStatusMessage(`🎉 ${data.message || `Subtitles (${captionFormat.toUpperCase()}) downloaded!`}`);
 
-        if (exportMode === 'pro' && isAuthenticated && isPro) {
-          try {
-            const clientJobId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-            fetch(`${BACKEND_URL}/api/drive/export`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${token}`,
-              },
-              credentials: 'include',
-              body: JSON.stringify({
-                url: activeUrl,
-                format: captionFormat,
-                captionLang: captionLang || 'auto',
-                trimStart: effectiveTrimStart,
-                trimEnd: effectiveTrimEnd,
-                customFileName: customFileName || metadata?.title || 'Subtitles',
-                clientJobId,
-              }),
-            }).catch(() => {});
-          } catch (_) {}
-        }
 
         setTimeout(() => {
           setStatusMessage('');
@@ -1096,28 +1054,6 @@ export default function ClipFlowEditor() {
       setDownloadStatus('success');
       setStatusMessage('🎉 Clip processed and downloaded successfully!');
 
-      if (exportMode === 'pro' && isAuthenticated && isPro) {
-        try {
-          const clientJobId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-          fetch(`${BACKEND_URL}/api/drive/export`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              url: activeUrl,
-              format: effectiveFormat,
-              quality: downloadQuality,
-              trimStart: effectiveTrimStart,
-              trimEnd: effectiveTrimEnd,
-              customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
-              clientJobId,
-            }),
-          }).catch(() => {});
-        } catch (_) {}
-      }
 
       setTimeout(() => {
         setStatusMessage('');

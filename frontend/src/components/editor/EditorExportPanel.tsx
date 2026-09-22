@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ImageIcon, Film, Clock, Download, ChevronDown, Check,
   RectangleHorizontal, Smartphone, Square, RectangleVertical, Crop,
-  Minimize2, Cloud, HardDrive, CheckCircle2, AlertCircle, RefreshCw,
+  Minimize2, HardDrive, CheckCircle2, AlertCircle, RefreshCw,
   Loader2, ArrowRight
 } from 'lucide-react';
 import { ExportFormatSection } from '../ExportFormatSection';
@@ -41,8 +40,8 @@ interface EditorExportPanelProps {
   downloadStatus: 'idle' | 'running' | 'success' | 'error';
   isDownloading: boolean;
   handleExportDownload: () => Promise<void>;
-  exportMode: 'free' | 'pro';
-  isPro: boolean;
+  exportMode?: 'free' | 'pro';
+  isPro?: boolean;
   estimatedBytes: number;
 }
 
@@ -98,11 +97,10 @@ export function EditorExportPanel({
   downloadStatus,
   isDownloading,
   handleExportDownload,
-  exportMode,
-  isPro,
+  exportMode: _exportMode,
+  isPro: _isPro,
   estimatedBytes,
 }: EditorExportPanelProps) {
-  const navigate = useNavigate();
   const [isImageModeDropdownOpen, setIsImageModeDropdownOpen] = useState(false);
   const imageModeDropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -439,16 +437,6 @@ export function EditorExportPanel({
               )}
               <span className="truncate">{statusMessage}</span>
             </div>
-
-            {downloadStatus === 'success' && exportMode === 'pro' && (
-              <button
-                onClick={() => navigate('/editor/storage')}
-                className="flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-500 px-2 py-1 rounded-md shrink-0 transition-colors"
-              >
-                <Cloud className="w-3 h-3" />
-                <span>View in Storage</span>
-              </button>
-            )}
           </motion.div>
         )}
 
@@ -464,17 +452,13 @@ export function EditorExportPanel({
                 transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
                 className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
               />
-              <span>{exportMode === 'pro' ? 'Saving to Pro Cloud...' : 'Downloading...'}</span>
+              <span>Downloading clip...</span>
             </>
           ) : (
             <>
-              {exportMode === 'pro' ? (
-                <Cloud className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
-              ) : (
-                <HardDrive className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
-              )}
+              <HardDrive className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
               <span>
-                {exportMode === 'pro' ? (isPro ? 'Save to Cloud' : 'Upgrade to PRO') : 'Download'}
+                Download Clip
                 {formatBytes(estimatedBytes) ? ` (${formatBytes(estimatedBytes)})` : ''}
               </span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
