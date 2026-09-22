@@ -30,6 +30,8 @@ export interface ClientExportResult {
   fileName: string;
   url: string;
   sizeBytes: number;
+  actualQuality?: string;
+  qualityNote?: string;
 }
 
 /**
@@ -103,6 +105,11 @@ export class ClientVideoExportEngine {
       }
     }
 
+    if (tracks.qualityNote) {
+      console.log('[ClientVideoExportEngine] ℹ️ Quality selection note:', tracks.qualityNote);
+      if (onProgress) onProgress(`ℹ️ ${tracks.qualityNote}`, 8);
+    }
+
     const videoStreamUrl = tracks.videoFormat?.url || tracks.combinedFormat?.url || currentMetadata?.direct_stream_url;
     let audioStreamUrl = tracks.audioFormat?.url || (tracks.combinedFormat ? tracks.combinedFormat.url : null);
 
@@ -160,6 +167,8 @@ export class ClientVideoExportEngine {
       fileName: finalFileName,
       url: downloadUrl,
       sizeBytes: result.sizeBytes,
+      actualQuality: tracks.actualQuality,
+      qualityNote: tracks.qualityNote,
     };
   }
 }

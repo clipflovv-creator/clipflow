@@ -1021,19 +1021,22 @@ export default function ClipFlowEditor() {
 
         console.log('[ClipFlow Studio EXPORT SUCCESS]', exportResult);
         setDownloadStatus('success');
-        setStatusMessage('🎉 Clip processed and downloaded directly to your device!');
+        const successMessage = exportResult.qualityNote
+          ? `🎉 Downloaded! (${exportResult.qualityNote})`
+          : '🎉 Clip processed and downloaded directly to your device!';
+        setStatusMessage(successMessage);
 
         setTimeout(() => {
           setStatusMessage('');
           setDownloadStatus('idle');
-        }, 3000);
+        }, exportResult.qualityNote ? 5000 : 3000);
 
         saveToHistory({
           title: customFileName || metadata?.title || 'ClipFlow Video',
           url: activeUrl,
           platform: 'youtube',
           format: effectiveFormat,
-          quality: downloadQuality,
+          quality: exportResult.actualQuality || downloadQuality,
           duration: Math.max(1, effectiveTrimEnd - effectiveTrimStart),
         });
         return;

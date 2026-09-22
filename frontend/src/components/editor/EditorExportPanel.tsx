@@ -393,7 +393,7 @@ export function EditorExportPanel({
             setCaptionLang={setCaptionLang}
             availableCaptions={[...(metadata?.subtitles || []), ...(metadata?.automatic_captions || [])]}
             availableQualities={qualityOptions}
-            detectedMaxHeight={qualityOptions.length > 0 ? qualityOptions[0].height : undefined}
+            detectedMaxHeight={qualityOptions.find((q) => q.isNative)?.height || metadata?.height || 1080}
           />
 
           <div className="h-px bg-white/[0.05]" />

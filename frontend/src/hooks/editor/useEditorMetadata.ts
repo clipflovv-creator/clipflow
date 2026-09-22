@@ -21,9 +21,11 @@ export interface PreviewQualityTier {
   hasAudio: boolean;
 }
 
-function buildQualityOptions(data: any): QualityOption[] {
+const ALL_STANDARD_HEIGHTS = [2160, 1440, 1080, 720, 480, 360, 240];
+
+export function buildQualityOptions(data: any): QualityOption[] {
   const rawFormats = data?.video_formats || data?.formats || [];
-  const heights = Array.from(
+  const rawHeights: number[] = Array.from<number>(
     new Set(
       rawFormats
         .map((f: any) => {
@@ -42,22 +44,29 @@ function buildQualityOptions(data: any): QualityOption[] {
     )
   ).sort((a: any, b: any) => b - a);
 
-  return (heights.length > 0 ? (heights as number[]) : [1080, 720, 480, 360]).map((h) => {
+  // Union of standard heights (2160, 1440, 1080, 720...) and any detected video heights
+  const allHeights = Array.from(new Set([...ALL_STANDARD_HEIGHTS, ...rawHeights])).sort((a, b) => b - a);
+
+  return allHeights.map((h) => {
+    // Check if this height is natively available in the video (+/- 80px tolerance for ultrawide letterboxing)
     const matching = rawFormats.filter((f: any) => {
       let fh = f.height;
       if (!fh && f.resolution) {
         const match = (f.resolution || '').match(/\d+x(\d+)/);
         if (match) fh = parseInt(match[1], 10);
       }
-      return fh === h;
+      return fh === h || Math.abs((fh || 0) - h) <= 80;
     });
-    const best = matching.reduce((a: any, b: any) => (b.tbr || 0) > (a.tbr || 0) ? b : a, matching[0]);
+
+    const isNative = matching.length > 0;
+    const best = matching.reduce((a: any, b: any) => ((b?.tbr || 0) > (a?.tbr || 0) ? b : a), matching[0]);
+
     return {
       label: `${h}p`,
       height: h,
       format_id: best?.format_id || 'best',
       tbr: best?.tbr,
-      isNative: true,
+      isNative,
     };
   });
 }

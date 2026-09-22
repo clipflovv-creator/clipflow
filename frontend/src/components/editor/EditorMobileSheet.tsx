@@ -268,35 +268,51 @@ export const EditorMobileSheet: React.FC<EditorMobileSheetProps> = ({
                     </div>
                   </div>
 
-                  {downloadFormat === 'mp4' && (
-                    <div className="space-y-2 pt-1 border-t border-white/[0.08]">
-                      <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-semibold">
-                        Video Resolution
-                      </span>
-                      <div className="grid grid-cols-3 gap-2">
-                        {qualityOptions.map((opt) => {
-                          const isSelected = downloadQuality === opt.label;
-                          return (
-                            <button
-                              key={opt.label}
-                              type="button"
-                              onClick={() => handleSetDownloadQuality(opt.label)}
-                              className={`py-2.5 px-2 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-[0.98] ${
-                                isSelected
-                                  ? 'bg-white text-black border-white shadow-md'
-                                  : 'bg-white/[0.04] text-zinc-300 border-white/10 hover:bg-white/[0.08]'
-                              }`}
-                            >
-                              <span className="text-xs font-bold">{opt.label}</span>
-                              <span className={`text-[9px] mt-0.5 ${isSelected ? 'text-zinc-600' : 'text-zinc-500'}`}>
-                                {opt.isNative ? 'Original' : opt.height ? `${opt.height}p` : 'Standard'}
-                              </span>
-                            </button>
-                          );
-                        })}
+                  {downloadFormat === 'mp4' && (() => {
+                    const maxNativeHeight = qualityOptions.find((q) => q.isNative)?.height || 1080;
+                    const selectedOpt = qualityOptions.find((q) => q.label === downloadQuality || q.label.startsWith(downloadQuality));
+                    const isSelectedNative = selectedOpt ? selectedOpt.isNative : true;
+
+                    return (
+                      <div className="space-y-2 pt-1 border-t border-white/[0.08]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-semibold">
+                            Video Resolution
+                          </span>
+                          <span className="text-[10px] text-zinc-500">
+                            Max: <span className="text-zinc-300 font-bold">{maxNativeHeight}p</span>
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {qualityOptions.map((opt) => {
+                            const isSelected = downloadQuality === opt.label;
+                            return (
+                              <button
+                                key={opt.label}
+                                type="button"
+                                onClick={() => handleSetDownloadQuality(opt.label)}
+                                className={`py-2.5 px-2 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-[0.98] ${
+                                  isSelected
+                                    ? 'bg-white text-black border-white shadow-md'
+                                    : 'bg-white/[0.04] text-zinc-300 border-white/10 hover:bg-white/[0.08]'
+                                }`}
+                              >
+                                <span className="text-xs font-bold">{opt.label}</span>
+                                <span className={`text-[9px] mt-0.5 ${isSelected ? 'text-zinc-600' : opt.isNative ? 'text-emerald-400 font-medium' : 'text-zinc-500'}`}>
+                                  {opt.isNative ? 'Native' : `Near ${maxNativeHeight}p`}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {!isSelectedNative && (
+                          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] leading-relaxed">
+                            ℹ️ <strong>Note:</strong> Source max is {maxNativeHeight}p. Selected {downloadQuality} will automatically download the highest native {maxNativeHeight}p stream directly from the CDN.
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {downloadFormat === 'mp3' && (
                     <div className="space-y-2 pt-1 border-t border-white/[0.08]">

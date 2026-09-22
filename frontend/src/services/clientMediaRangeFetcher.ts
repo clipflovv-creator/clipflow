@@ -95,6 +95,9 @@ export interface StreamTrackSelection {
   videoFormat: any | null;
   audioFormat: any | null;
   combinedFormat: any | null;
+  requestedQuality?: string;
+  actualQuality?: string;
+  qualityNote?: string;
 }
 
 /**
@@ -283,10 +286,25 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
                        sortedCombined.find((f) => getFormatHeight(f) <= targetHeight) ||
                        sortedCombined[0] || null;
 
+  const actualHeight = bestVideo
+    ? getFormatHeight(bestVideo)
+    : (bestCombined ? getFormatHeight(bestCombined) : 0);
+  const actualQuality = actualHeight > 0 ? `${actualHeight}p` : targetQuality;
+
+  let qualityNote: string | undefined = undefined;
+  if (!isOriginal && targetHeight < 90000 && actualHeight > 0) {
+    if (targetHeight > actualHeight + 80) {
+      qualityNote = `${targetQuality} is not available on this video source — using highest available native ${actualQuality} stream directly from CDN.`;
+    }
+  }
+
   return {
     videoFormat: bestVideo,
     audioFormat: bestAudio,
     combinedFormat: bestCombined,
+    requestedQuality: targetQuality,
+    actualQuality,
+    qualityNote,
   };
 }
 
