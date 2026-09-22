@@ -11,19 +11,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
 
-function resolveYtDlpBinary(): string {
-  const candidates = [
-    path.join(process.cwd(), 'backend', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'yt-dlp.exe'),
-    path.join(process.cwd(), 'backend', 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'qt-app', 'bin', 'yt-dlp.exe'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'yt-dlp';
-}
+import { resolveYtDlpBinary } from '../utils/binary-resolver.util.js';
 
 function resolveTempDir(): string {
   const isInsideBackend = process.cwd().endsWith('backend') || process.cwd().endsWith('backend\\') || process.cwd().endsWith('backend/');

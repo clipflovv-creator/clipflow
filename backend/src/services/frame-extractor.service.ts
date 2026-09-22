@@ -5,37 +5,12 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { scheduleCleanup } from './ffmpeg.service.js';
 import { YouTubeFrameExtractorService } from './youtube/index.js';
+import { resolveYtDlpBinary, resolveFFmpegBinary } from '../utils/binary-resolver.util.js';
 
 const execAsync = promisify(exec);
 
-function resolveYtDlpBinary(): string {
-  const candidates = [
-    path.join(process.cwd(), 'backend', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'yt-dlp.exe'),
-    path.join(process.cwd(), 'backend', 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'node_modules', 'yt-dlp-exec', 'bin', 'yt-dlp.exe'),
-    path.join(process.cwd(), 'qt-app', 'bin', 'yt-dlp.exe'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'yt-dlp';
-}
-
-function resolveFfmpegBinary(): string {
-  const candidates = [
-    path.join(process.cwd(), 'backend', 'ffmpeg.exe'),
-    path.join(process.cwd(), 'ffmpeg.exe'),
-    path.join(process.cwd(), 'qt-app', 'bin', 'ffmpeg.exe'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return 'ffmpeg';
-}
-
 const YTDLP_BIN = resolveYtDlpBinary();
-const FFMPEG_BIN = resolveFfmpegBinary();
+const FFMPEG_BIN = resolveFFmpegBinary();
 const TEMP_DIR = path.join(process.cwd(), 'temp');
 const CACHE_DIR = path.join(TEMP_DIR, 'frames');
 
