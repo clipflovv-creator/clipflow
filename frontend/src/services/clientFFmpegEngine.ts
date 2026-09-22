@@ -303,15 +303,12 @@ function buildVideoFilter(
 ): string | null {
   const filters: string[] = [];
 
-  // 1. Interactive Drag Crop Box Coordinates (only when custom crop or active sub-frame is defined)
-  if (
-    fitMode !== 'crop' &&
-    cropBox &&
-    cropBox.width > 0 &&
-    cropBox.height > 0 &&
-    (aspectRatio === 'custom' || (cropBox.width < 0.999 || cropBox.height < 0.999 || cropBox.x > 0.001 || cropBox.y > 0.001)) &&
-    aspectRatio !== '16:9'
-  ) {
+  const hasValidCropBox = !!(cropBox && cropBox.width > 0 && cropBox.height > 0);
+  const isCustom = aspectRatio === 'custom';
+  const isSubFrame = hasValidCropBox && (cropBox.width < 0.999 || cropBox.height < 0.999 || cropBox.x > 0.001 || cropBox.y > 0.001);
+
+  // 1. Custom mode or Interactive Framing Crop Box
+  if (hasValidCropBox && (isCustom || (fitMode === 'crop' && isSubFrame))) {
     if (cropBox.width <= 1.0 && cropBox.height <= 1.0) {
       const w = Math.min(1, Math.max(0.05, cropBox.width)).toFixed(4);
       const h = Math.min(1, Math.max(0.05, cropBox.height)).toFixed(4);
@@ -325,6 +322,9 @@ function buildVideoFilter(
       const y = Math.max(0, Math.round(cropBox.y));
       filters.push(`crop=${w}:${h}:${x}:${y}`);
     }
+  } else if (isCustom) {
+    // Custom aspect ratio fallback if no cropBox coordinates provided
+    filters.push('crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2');
   }
   // 2. Aspect Ratio Presets
   else if (aspectRatio && aspectRatio !== '16:9' && aspectRatio !== 'original') {

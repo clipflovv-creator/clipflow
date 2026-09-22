@@ -45,17 +45,26 @@ export function getFFmpegAspectFilter(
   cropPosition: 'left' | 'center' | 'right' = 'center',
   cropBox?: CropBoxCoordinates
 ): string {
-  if (!aspectRatio || aspectRatio === '16:9' || aspectRatio === 'original') {
-    return ''; // Full 16:9 original video -> zero crop/pad filter
-  }
+  const hasValidCropBox = !!(cropBox && cropBox.width > 0 && cropBox.height > 0);
+  const isCustom = aspectRatio === 'custom';
+  const isSubFrame = hasValidCropBox && (cropBox.width < 0.999 || cropBox.height < 0.999 || cropBox.x > 0.001 || cropBox.y > 0.001);
 
   // Priority 1: Interactive Crop Box Coordinates (Drag-to-Frame / Custom)
-  if (fitMode !== 'pad' && cropBox && cropBox.width > 0 && cropBox.height > 0) {
+  if (hasValidCropBox && (isCustom || (fitMode === 'crop' && isSubFrame))) {
     const w = Math.min(1, Math.max(0.05, cropBox.width)).toFixed(4);
     const h = Math.min(1, Math.max(0.05, cropBox.height)).toFixed(4);
     const x = Math.min(1, Math.max(0, cropBox.x)).toFixed(4);
     const y = Math.min(1, Math.max(0, cropBox.y)).toFixed(4);
     return `crop=trunc(iw*${w}/2)*2:trunc(ih*${h}/2)*2:trunc(iw*${x}/2)*2:trunc(ih*${y}/2)*2`;
+  }
+
+  if (isCustom) {
+    // Custom aspect ratio fallback if cropBox coordinates were not provided
+    return 'crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2';
+  }
+
+  if (!aspectRatio || aspectRatio === '16:9' || aspectRatio === 'original') {
+    return ''; // Full 16:9 original video -> zero crop/pad filter
   }
 
   const isCrop = fitMode === 'crop';

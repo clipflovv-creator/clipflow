@@ -727,16 +727,8 @@ router.post('/download', async (req: Request, res: Response) => {
     }
 
     let vfFilter = '';
-    if (format === 'mp4' && aspectRatio && aspectRatio !== 'original' && aspectRatio !== '16:9') {
-      const isPad = req.body.fitMode === 'pad';
-
-      if (aspectRatio === '9:16') {
-        vfFilter = isPad ? 'pad=ceil(max(iw\\,ih*9/16)/2)*2:ceil(max(ih\\,iw*16/9)/2)*2:(ow-iw)/2:(oh-ih)/2:color=black' : 'crop=ih*9/16:ih';
-      } else if (aspectRatio === '1:1') {
-        vfFilter = isPad ? 'pad=ceil(max(iw\\,ih)/2)*2:ceil(max(ih\\,iw)/2)*2:(ow-iw)/2:(oh-ih)/2:color=black' : 'crop=ih:ih';
-      } else if (aspectRatio === '4:5') {
-        vfFilter = isPad ? 'pad=ceil(max(iw\\,ih*4/5)/2)*2:ceil(max(ih\\,iw*5/4)/2)*2:(ow-iw)/2:(oh-ih)/2:color=black' : 'crop=ih*4/5:ih';
-      }
+    if (format === 'mp4') {
+      vfFilter = getFFmpegAspectFilter(aspectRatio, fitMode, cropPosition, cropBox);
     }
 
     const effectiveTrimEnd = trimEnd || 9999999;
@@ -1014,6 +1006,8 @@ router.post('/download', async (req: Request, res: Response) => {
       trimEnd: trimEnd !== undefined ? Number(trimEnd) : undefined,
       aspectRatio,
       fitMode,
+      cropPosition,
+      cropBox,
       customFileName,
     });
 

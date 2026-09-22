@@ -111,7 +111,7 @@ export class ClientVideoExportEngine {
       aspectRatio,
       fitMode,
       cropPosition,
-      cropBox: aspectRatio === 'custom' ? cropBox : undefined,
+      cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
       duration: totalDuration,
       videoFileSize: tracks.videoFormat?.filesize,
       audioFileSize: tracks.audioFormat?.filesize,
