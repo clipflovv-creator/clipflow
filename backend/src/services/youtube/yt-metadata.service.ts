@@ -38,16 +38,41 @@ function findCookiesFile(): string | null {
   return null;
 }
 
+/**
+ * Returns extra bypass flags read from environment variables:
+ *   YTDLP_PROXY       - e.g. "http://user:pass@proxy.webshare.io:80"
+ *                       Routes yt-dlp through a residential proxy to bypass datacenter IP blocks.
+ *   YTDLP_PO_TOKEN    - YouTube PO token (from browser DevTools → Network → innertube requests).
+ *                       Set alongside YOUTUBE_COOKIES for the best bypass rate.
+ */
+function getBypassFlags(): string {
+  const parts: string[] = [];
+  const proxy = process.env.YTDLP_PROXY?.trim();
+  if (proxy) {
+    parts.push(`--proxy "${proxy}"`);
+    console.log('[YouTubeMetadataService] Using proxy for YouTube requests.');
+  }
+  const poToken = process.env.YTDLP_PO_TOKEN?.trim();
+  if (poToken) {
+    parts.push(`--extractor-args "youtube:po_token=web+${poToken}"`);
+  }
+  return parts.join(' ');
+}
+
 export class YouTubeMetadataService {
   /**
    * Fetches full YouTube video metadata, title, duration, uploader, thumbnails, and DASH formats.
-   * Uses android,ios,mweb client spoofing to prevent datacenter IP 429 / 403 blocks on Render / cloud hosts.
+   * Uses multiple client-spoofing strategies to prevent datacenter IP 429 / 403 blocks on Render / cloud hosts.
+   * Set YTDLP_PROXY env var to a residential HTTP/SOCKS5 proxy URL for most reliable results.
    */
   static async getMetadata(url: string, ytDlpBin: string, retries = 2): Promise<any> {
     const cookiesFile = findCookiesFile();
     const cookieArg = cookiesFile ? `--cookies "${cookiesFile}" ` : '';
+    const bypassFlags = getBypassFlags();
 
-    // Multiple client spoofing strategies for cloud hosting environments
+    // Multiple client spoofing strategies for cloud hosting environments.
+    // If YTDLP_PROXY is set, these work reliably. Without a proxy, datacenter IPs
+    // (Render, Vercel, AWS) are hard-blocked by YouTube regardless of client type.
     const clientStrategies = [
       '--extractor-args "youtube:player_client=android,ios,mweb"',
       '--extractor-args "youtube:player_client=ios,tv,mweb"',
@@ -58,7 +83,7 @@ export class YouTubeMetadataService {
     let lastErr: any;
     for (let attempt = 0; attempt < clientStrategies.length && attempt <= retries; attempt++) {
       const clientArg = clientStrategies[attempt];
-      const flags = `--js-runtimes node ${clientArg} ${cookieArg}--no-warnings --no-check-certificate --no-playlist --dump-json`;
+      const flags = `--js-runtimes node ${clientArg} ${bypassFlags} ${cookieArg}--no-warnings --no-check-certificate --no-playlist --dump-json`;
 
       try {
         const { stdout } = await execAsync(

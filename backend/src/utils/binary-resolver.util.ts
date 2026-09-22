@@ -14,6 +14,23 @@ export function resolveYtDlpBinary(): string {
   if (cachedYtDlp && fs.existsSync(cachedYtDlp)) return cachedYtDlp;
 
   const cwd = process.cwd();
+
+  // On Linux (cloud/Render), ALWAYS prefer our managed ./bin/yt-dlp first.
+  // The yt-dlp-exec bundled binary is months old and fails with modern YouTube.
+  if (!isWin) {
+    const managedBin = [
+      path.join(cwd, 'bin', ytName),
+      path.join(cwd, 'backend', 'bin', ytName),
+    ];
+    for (const c of managedBin) {
+      if (fs.existsSync(c)) {
+        try { fs.chmodSync(c, 0o755); } catch {}
+        cachedYtDlp = c;
+        return c;
+      }
+    }
+  }
+
   const candidates = [
     path.join(cwd, 'bin', ytName),
     path.join(cwd, 'backend', 'bin', ytName),

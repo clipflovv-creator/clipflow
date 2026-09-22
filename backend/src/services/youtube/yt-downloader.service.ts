@@ -143,6 +143,14 @@ export class YouTubeDownloaderService {
         '--extractor-args "youtube:player_client=android,ios,mweb"',
       ];
 
+      // Proxy bypass for datacenter IP blocks (set YTDLP_PROXY env var on Render)
+      const proxy = process.env.YTDLP_PROXY?.trim();
+      if (proxy) args.push(`--proxy "${proxy}"`);
+
+      // PO token support (set YTDLP_PO_TOKEN env var for extra auth bypass)
+      const poToken = process.env.YTDLP_PO_TOKEN?.trim();
+      if (poToken) args.push(`--extractor-args "youtube:po_token=web+${poToken}"`);
+
       if (isTrimmed) {
         args.push(`--download-sections "*${startTimeStr}-${endTimeStr}"`);
       }
