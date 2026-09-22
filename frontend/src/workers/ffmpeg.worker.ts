@@ -11,6 +11,7 @@ import { toBlobURL } from '@ffmpeg/util';
 
 let ffmpeg: FFmpeg | null = null;
 let isLoaded = false;
+const logHistory: string[] = [];
 
 export interface WorkerCropBox {
   x: number;
@@ -22,8 +23,8 @@ export interface WorkerCropBox {
 export interface WorkerProcessPayload {
   jobId: string;
   inputData: Uint8Array;
-  inputFileName: string;
-  outputFileName: string;
+  inputFileName?: string;
+  outputFileName?: string;
   trimStart: number;
   duration: number;
   format: 'mp4' | 'mp3' | 'wav' | 'aac';
@@ -45,10 +46,9 @@ async function loadFFmpeg() {
   ffmpeg = new FFmpeg();
 
   ffmpeg.on('log', ({ message }) => {
-    // Suppress verbose FFmpeg frame logs, print major markers
-    if (message.includes('Stream #') || message.includes('Duration:') || message.includes('Error') || message.includes('Output #')) {
-      console.log(`[FFmpeg.wasm Worker] ${message}`);
-    }
+    logHistory.push(message);
+    if (logHistory.length > 100) logHistory.shift();
+    console.log(`[FFmpeg.wasm Worker] ${message}`);
   });
 
   try {
@@ -94,7 +94,7 @@ function buildVideoFilter(
 
   // 1. Interactive Drag Crop Box Coordinates (only when custom crop or active sub-frame is defined)
   if (
-    fitMode !== 'pad' &&
+    fitMode !== 'crop' &&
     cropBox &&
     cropBox.width > 0 &&
     cropBox.height > 0 &&
@@ -151,7 +151,6 @@ self.onmessage = async (e: MessageEvent) => {
     const {
       jobId,
       inputData,
-      inputFileName = 'input.ts',
       outputFileName = 'clip.mp4',
       trimStart = 0,
       duration = 60,
@@ -163,6 +162,17 @@ self.onmessage = async (e: MessageEvent) => {
       quality,
       audioBitrate = '192k',
     }: WorkerProcessPayload = payload;
+
+    const isInputMp4 =
+      (payload.inputFileName && payload.inputFileName.endsWith('.mp4')) ||
+      (inputData.length >= 8 &&
+        ((inputData[4] === 0x66 && inputData[5] === 0x74 && inputData[6] === 0x79 && inputData[7] === 0x70) || // ftyp
+         (inputData[4] === 0x6d && inputData[5] === 0x6f && inputData[6] === 0x6f && inputData[7] === 0x76) || // moov
+         (inputData[4] === 0x6d && inputData[5] === 0x6f && inputData[6] === 0x6f && inputData[7] === 0x66))); // moof
+
+    const internalInput = isInputMp4 ? 'input.mp4' : 'input.ts';
+    const isAudio = format === 'mp3' || format === 'wav' || format === 'aac';
+    const internalOutput = isAudio ? `output.${format}` : 'output.mp4';
 
     try {
       self.postMessage({
@@ -182,7 +192,7 @@ self.onmessage = async (e: MessageEvent) => {
         message: 'Writing video stream to memory...',
       });
 
-      await instance.writeFile(inputFileName, inputData);
+      await instance.writeFile(internalInput, inputData);
 
       // Track FFmpeg progress events during transcode / mux
       const progressHandler = ({ progress, time }: { progress: number; time: number }) => {
@@ -201,14 +211,27 @@ self.onmessage = async (e: MessageEvent) => {
 
       instance.on('progress', progressHandler);
 
-      const isAudio = format === 'mp3' || format === 'wav' || format === 'aac';
       const safeAudioBitrate = String(audioBitrate).endsWith('k') ? audioBitrate : '192k';
       const filter = !isAudio ? buildVideoFilter(aspectRatio, fitMode, cropPosition, cropBox, quality) : '';
 
-      const args: string[] = ['-ss', trimStart.toFixed(3), '-i', inputFileName, '-t', duration.toFixed(3)];
+      // Robust argument order for MPEG-TS streams:
+      // Place input first with error tolerance, then seek offset and duration to prevent PTS mismatches
+      const args: string[] = [
+        '-err_detect', 'ignore_err',
+        '-fflags', '+genpts+discardcorrupt',
+        '-i', internalInput,
+        '-ss', Math.max(0, trimStart).toFixed(3),
+        '-t', Math.max(0.1, duration).toFixed(3),
+      ];
 
       if (isAudio) {
-        args.push('-vn', '-c:a', 'libmp3lame', '-b:a', safeAudioBitrate, outputFileName);
+        if (format === 'wav') {
+          args.push('-vn', '-c:a', 'pcm_s16le', internalOutput);
+        } else if (format === 'aac') {
+          args.push('-vn', '-c:a', 'aac', '-b:a', safeAudioBitrate, internalOutput);
+        } else {
+          args.push('-vn', '-c:a', 'libmp3lame', '-b:a', safeAudioBitrate, internalOutput);
+        }
       } else {
         if (filter) {
           args.push('-vf', filter);
@@ -217,10 +240,12 @@ self.onmessage = async (e: MessageEvent) => {
           '-c:v', 'libx264',
           '-preset', 'ultrafast',
           '-crf', '21',
+          '-pix_fmt', 'yuv420p',
+          '-max_muxing_queue_size', '1024',
           '-c:a', 'aac',
           '-b:a', safeAudioBitrate,
           '-movflags', '+faststart',
-          outputFileName
+          internalOutput
         );
       }
 
@@ -236,7 +261,8 @@ self.onmessage = async (e: MessageEvent) => {
       const exitCode = await instance.exec(args);
 
       if (exitCode !== 0) {
-        throw new Error(`FFmpeg process returned non-zero exit code: ${exitCode}`);
+        const errorDetails = logHistory.slice(-10).join('\n');
+        throw new Error(`FFmpeg process returned non-zero exit code: ${exitCode}\n${errorDetails}`);
       }
 
       self.postMessage({
@@ -247,12 +273,12 @@ self.onmessage = async (e: MessageEvent) => {
       });
 
       // Read output file from virtual FS
-      const outputData = (await instance.readFile(outputFileName)) as Uint8Array;
+      const outputData = (await instance.readFile(internalOutput)) as Uint8Array;
 
       // Clean up virtual filesystem memory
       try {
-        await instance.deleteFile(inputFileName);
-        await instance.deleteFile(outputFileName);
+        await instance.deleteFile(internalInput);
+        await instance.deleteFile(internalOutput);
       } catch (_) { }
 
       // Transfer Uint8Array buffer back to main thread

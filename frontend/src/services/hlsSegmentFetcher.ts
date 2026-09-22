@@ -18,6 +18,7 @@ export interface HlsSegment {
 export interface ManifestParseResult {
   isMaster: boolean;
   mediaPlaylistUrl: string;
+  initSegmentUrl?: string;
   segments: HlsSegment[];
   totalDuration: number;
   targetDuration: number;
@@ -29,6 +30,7 @@ export interface SegmentFetchResult {
   targetDuration: number;
   totalSegments: number;
   downloadedBytes: number;
+  containerType: 'mp4' | 'ts';
 }
 
 export interface SegmentFetchProgress {
@@ -123,8 +125,9 @@ export async function parseHlsManifest(
     return await parseHlsManifest(targetVariantUrl, quality);
   }
 
-  // Parse media playlist segments
+  // Parse media playlist segments & initialization map (fMP4 / CMAF)
   const segments: HlsSegment[] = [];
+  let initSegmentUrl: string | undefined;
   let currentTime = 0;
   let targetDuration = 4;
 
@@ -134,6 +137,14 @@ export async function parseHlsManifest(
     if (line.startsWith('#EXT-X-TARGETDURATION:')) {
       const td = parseFloat(line.split(':')[1]);
       if (!isNaN(td)) targetDuration = td;
+    }
+
+    // Detect initialization segment in fragmented MP4 HLS manifests
+    if (line.startsWith('#EXT-X-MAP:')) {
+      const uriMatch = line.match(/URI="([^"]+)"/i) || line.match(/URI=([^,\s]+)/i);
+      if (uriMatch && uriMatch[1]) {
+        initSegmentUrl = resolveUrl(uriMatch[1], manifestUrl);
+      }
     }
 
     if (line.startsWith('#EXTINF:')) {
@@ -171,6 +182,7 @@ export async function parseHlsManifest(
   return {
     isMaster: false,
     mediaPlaylistUrl: manifestUrl,
+    initSegmentUrl,
     segments,
     totalDuration: currentTime,
     targetDuration,
@@ -198,7 +210,7 @@ export async function fetchRequiredHlsSegments(
     });
   }
 
-  const { segments, totalDuration } = await parseHlsManifest(manifestUrl, quality);
+  const { segments, totalDuration, initSegmentUrl, mediaPlaylistUrl } = await parseHlsManifest(manifestUrl, quality);
 
   if (segments.length === 0) {
     throw new Error('No video segments found in HLS stream manifest');
@@ -238,15 +250,44 @@ export async function fetchRequiredHlsSegments(
     requestedTrim: `${safeTrimStart.toFixed(2)}s -> ${safeTrimEnd.toFixed(2)}s (${targetDuration.toFixed(2)}s)`,
     totalManifestSegments: segments.length,
     selectedSegments: `${requiredSegments.length} segments (${requiredSegments[0].index} -> ${requiredSegments[requiredSegments.length - 1].index})`,
+    initSegmentUrl: initSegmentUrl || 'None',
     sliceStartTime: `${sliceStartTime.toFixed(2)}s`,
     relativeTrimStart: `${relativeTrimStart.toFixed(2)}s`,
   });
+
+  // Step 1: Fetch initialization segment if present (fMP4 / CMAF)
+  let initBuffer: ArrayBuffer | null = null;
+  let resolvedInitUrl = initSegmentUrl;
+
+  // Fallback: If no #EXT-X-MAP was in the manifest but segments are .mp4/.m4s, try standard init.mp4
+  if (!resolvedInitUrl && (requiredSegments[0].uri.includes('.mp4') || requiredSegments[0].uri.includes('.m4s'))) {
+    resolvedInitUrl = resolveUrl('index-init.mp4', mediaPlaylistUrl);
+  }
+
+  if (resolvedInitUrl) {
+    try {
+      let fetchUrl = resolvedInitUrl;
+      if (
+        (fetchUrl.includes('cloudfront.net') || fetchUrl.includes('ttvnw.net')) &&
+        !fetchUrl.includes('/api/video/')
+      ) {
+        fetchUrl = `${BACKEND_URL}/api/video/proxy-stream?url=${encodeURIComponent(fetchUrl)}`;
+      }
+      const initRes = await fetch(fetchUrl);
+      if (initRes.ok) {
+        initBuffer = await initRes.arrayBuffer();
+        console.log(`[HLS Segment Fetcher 📦] Downloaded fMP4 init header (${initBuffer.byteLength} bytes)`);
+      }
+    } catch (initErr) {
+      console.warn('[HLS Segment Fetcher ⚠️] Optional init header fetch failed, proceeding with segments:', initErr);
+    }
+  }
 
   // Concurrent fetcher with controlled concurrency (e.g. 4 streams)
   const CONCURRENCY = 4;
   const segmentBuffers: ArrayBuffer[] = new Array(totalSegments);
   let loadedCount = 0;
-  let totalBytes = 0;
+  let totalBytes = initBuffer ? initBuffer.byteLength : 0;
 
   const fetchSegment = async (item: HlsSegment, sliceIndex: number) => {
     let fetchUrl = item.resolvedUrl;
@@ -291,15 +332,35 @@ export async function fetchRequiredHlsSegments(
 
   await Promise.all(workers);
 
-  // Concatenate all MPEG-TS ArrayBuffers into a single contiguous Uint8Array
+  // Concatenate initialization segment + all media segments into a single contiguous Uint8Array
   const combined = new Uint8Array(totalBytes);
   let offset = 0;
-  for (const buf of segmentBuffers) {
-    combined.set(new Uint8Array(buf), offset);
-    offset += buf.byteLength;
+
+  if (initBuffer) {
+    combined.set(new Uint8Array(initBuffer), offset);
+    offset += initBuffer.byteLength;
   }
 
-  console.log(`[HLS Segment Fetcher ✅] Assembled ${totalSegments} segments (${(totalBytes / (1024 * 1024)).toFixed(2)} MB total)`);
+  for (const buf of segmentBuffers) {
+    if (buf) {
+      combined.set(new Uint8Array(buf), offset);
+      offset += buf.byteLength;
+    }
+  }
+
+  // Detect container type from first bytes (fMP4 box vs MPEG-TS sync byte 0x47)
+  const isMp4 = initBuffer !== null ||
+    (combined.length >= 8 &&
+      (
+        (combined[4] === 0x66 && combined[5] === 0x74 && combined[6] === 0x79 && combined[7] === 0x70) || // ftyp
+        (combined[4] === 0x6d && combined[5] === 0x6f && combined[6] === 0x6f && combined[7] === 0x76) || // moov
+        (combined[4] === 0x6d && combined[5] === 0x6f && combined[6] === 0x6f && combined[7] === 0x66) || // moof
+        (combined[4] === 0x73 && combined[5] === 0x74 && combined[6] === 0x79 && combined[7] === 0x70)    // styp
+      ));
+
+  const containerType: 'mp4' | 'ts' = isMp4 ? 'mp4' : 'ts';
+
+  console.log(`[HLS Segment Fetcher ✅] Assembled ${totalSegments} segments (${(totalBytes / (1024 * 1024)).toFixed(2)} MB total, container: ${containerType})`);
 
   return {
     buffer: combined,
@@ -307,5 +368,6 @@ export async function fetchRequiredHlsSegments(
     targetDuration,
     totalSegments,
     downloadedBytes: totalBytes,
+    containerType,
   };
 }

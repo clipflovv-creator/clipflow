@@ -156,13 +156,15 @@ export async function exportTwitchClipInBrowser(
     };
 
     // Dispatch job to worker with transferred inputData buffer
+    const inputFileName = segmentResult.containerType === 'mp4' ? 'input.mp4' : 'input.ts';
+
     worker.postMessage(
       {
         type: 'PROCESS_CLIP',
         payload: {
           jobId,
           inputData: segmentResult.buffer,
-          inputFileName: 'input.ts',
+          inputFileName,
           outputFileName,
           trimStart: segmentResult.relativeTrimStart,
           duration: segmentResult.targetDuration,
