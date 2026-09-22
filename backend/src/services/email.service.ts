@@ -155,7 +155,7 @@ class EmailService {
 
     return await this.deliverEmail({
       to: email,
-      subject: `Verify your ClipFlow account (Code: ${otpCode})`,
+      subject: `Verify your email address - ClipFlow`,
       html,
     });
   }
@@ -187,13 +187,13 @@ class EmailService {
 
     return await this.deliverEmail({
       to: email,
-      subject: `Reset your ClipFlow password (Code: ${otpCode})`,
+      subject: `Reset your password - ClipFlow`,
       html,
     });
   }
 
   /**
-   * Sends a feature-rich welcome email to new users introducing video editing tools.
+   * Sends a clean welcome email to new users.
    */
   public async sendWelcomeEmail(email: string, name?: string): Promise<boolean> {
     const frontendUrl = this.getFrontendUrl();
@@ -210,7 +210,7 @@ class EmailService {
 
     return await this.deliverEmail({
       to: email,
-      subject: `Welcome to ClipFlow Studio 🎬 — Video Editing & AI Repurposing`,
+      subject: `Welcome to ClipFlow`,
       html,
     });
   }
