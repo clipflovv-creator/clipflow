@@ -892,7 +892,7 @@ export default function ClipFlowEditor() {
       }
 
       // 1. Twitch Browser-Side Export Pipeline
-      if (isTwitch && twitchHlsUrl && downloadFormat !== 'captions') {
+      if (isTwitch && twitchHlsUrl) {
         setStatusMessage('⚡ Initializing browser video engine...');
         await exportTwitchClipInBrowser({
           manifestUrl: twitchHlsUrl,
