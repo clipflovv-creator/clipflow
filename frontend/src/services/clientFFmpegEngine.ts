@@ -8,7 +8,7 @@
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { toBlobURL } from '@ffmpeg/util';
-import { resolveRelayUrl, fetchSidxSlice, unwrapStreamUrl } from './clientMediaRangeFetcher';
+import { resolveRelayUrl, fetchSidxSlice, unwrapStreamUrl, disableEdgeRelay } from './clientMediaRangeFetcher';
 import { api } from './api';
 
 export interface FFmpegClipOptions {
@@ -107,7 +107,8 @@ async function fetchStreamChunk(
     });
 
     if (!response.ok && response.status !== 206 && response.status !== 416 && relayUrl.includes('workers.dev')) {
-      console.warn(`[ClientFFmpegEngine] Relay chunk fetch returned ${response.status}. Retrying via backend proxy...`);
+      console.warn(`[ClientFFmpegEngine] Relay chunk fetch returned ${response.status}. Disabling relay & retrying via backend proxy...`);
+      disableEdgeRelay();
       const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
       response = await fetch(fallbackUrl, {
         headers: { Range: rangeHeader },
@@ -115,7 +116,8 @@ async function fetchStreamChunk(
     }
   } catch (err) {
     if (relayUrl.includes('workers.dev')) {
-      console.warn('[ClientFFmpegEngine] Relay network error, retrying via backend proxy:', err);
+      console.warn('[ClientFFmpegEngine] Relay network error, disabling relay & retrying via backend proxy:', err);
+      disableEdgeRelay();
       const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
       response = await fetch(fallbackUrl, {
         headers: { Range: rangeHeader },
@@ -161,11 +163,13 @@ async function fetchDirectMediaStream(
   try {
     response = await fetch(relayUrl);
     if (!response.ok && relayUrl.includes('workers.dev')) {
+      disableEdgeRelay();
       const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
       response = await fetch(fallbackUrl);
     }
   } catch (err) {
     if (relayUrl.includes('workers.dev')) {
+      disableEdgeRelay();
       const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
       response = await fetch(fallbackUrl);
     } else {

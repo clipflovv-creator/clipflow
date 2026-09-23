@@ -72,6 +72,7 @@ app.set('trust proxy', 1);
 // CORS configuration supporting credentials (cookies)
 const allowedOrigins = [
   FRONTEND_URL,
+  'https://clipflow.cliy.me',
   'https://clipflow-lake.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000',
@@ -81,7 +82,7 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app') || origin.endsWith('.cliy.me')) {
         callback(null, true);
       } else {
         callback(null, true); // Permissive in dev/local

@@ -27,14 +27,17 @@ export default {
       });
     }
 
+    const requestUrl = new URL(request.url);
     let targetUrl = requestUrl.searchParams.get('url');
+
+    const origin = request.headers.get('Origin') || '*';
 
     if (!targetUrl) {
       return new Response(JSON.stringify({ error: 'Missing "url" query parameter' }), {
         status: 400,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Origin': origin,
         },
       });
     }
@@ -56,11 +59,15 @@ export default {
       if (targetUrl.includes('googlevideo.com') || targetUrl.includes('youtube.com')) {
         if (targetUrl.includes('c=IOS')) {
           upstreamHeaders.set('User-Agent', 'com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)');
-        } else {
-          // Android VR client matches yt-dlp default extraction client
+        } else if (targetUrl.includes('c=ANDROID')) {
           upstreamHeaders.set(
             'User-Agent',
             'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip'
+          );
+        } else {
+          upstreamHeaders.set(
+            'User-Agent',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
           );
         }
       } else {
@@ -98,7 +105,7 @@ export default {
 
       // 4. Build response headers with CORS
       const responseHeaders = new Headers(upstreamResponse.headers);
-      responseHeaders.set('Access-Control-Allow-Origin', '*');
+      responseHeaders.set('Access-Control-Allow-Origin', origin);
       responseHeaders.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
       responseHeaders.set('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Authorization');
       responseHeaders.set(
@@ -117,7 +124,7 @@ export default {
         status: 502,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Origin': origin,
         },
       });
     }

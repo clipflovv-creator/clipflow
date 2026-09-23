@@ -30,6 +30,16 @@ export function unwrapStreamUrl(directUrl: string): string {
   return url;
 }
 
+let edgeRelayDisabled = false;
+
+export function disableEdgeRelay(): void {
+  edgeRelayDisabled = true;
+}
+
+export function isEdgeRelayDisabled(): boolean {
+  return edgeRelayDisabled;
+}
+
 /**
  * Wraps a direct media stream URL (e.g. Googlevideo) with CORS proxy / Edge Relay.
  */
@@ -43,10 +53,9 @@ export function resolveRelayUrl(directUrl: string): string {
     return cleanUrl;
   }
 
-  // If URL points to localhost or private network, Cloudflare Edge Relay cannot access it.
-  // Directly route to local backend streaming proxy.
+  // If URL points to localhost or private network, or relay was disabled due to failure:
   const isLocalHost = cleanUrl.includes('localhost') || cleanUrl.includes('127.0.0.1');
-  if (isLocalHost) {
+  if (isLocalHost || edgeRelayDisabled) {
     return api.video.getProxyStreamUrl(cleanUrl);
   }
 
@@ -83,18 +92,20 @@ export async function fetchByteRange(
       },
     });
 
-    // If Cloudflare Edge Relay returned an error (e.g. 403, 502), transparently fall back to backend proxy
+    // If Cloudflare Edge Relay returned an error (e.g. 403, 500, 502), transparently disable and fall back
     if (!response.ok && response.status !== 206 && proxiedUrl.includes('workers.dev')) {
-      console.warn(`[MediaRangeFetcher] Edge relay returned status ${response.status}. Falling back to backend proxy...`);
+      console.warn(`[MediaRangeFetcher] Edge relay returned status ${response.status}. Disabling relay & falling back to backend proxy...`);
+      edgeRelayDisabled = true;
       const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
       response = await fetch(fallbackUrl, {
         headers: { Range: rangeHeader },
       });
     }
   } catch (netErr) {
-    // Network failure on relay: fallback to backend proxy
+    // Network failure on relay: disable and fallback to backend proxy
     if (proxiedUrl.includes('workers.dev')) {
-      console.warn('[MediaRangeFetcher] Edge relay network error, falling back to backend proxy:', netErr);
+      console.warn('[MediaRangeFetcher] Edge relay network error, disabling relay & falling back to backend proxy:', netErr);
+      edgeRelayDisabled = true;
       const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
       response = await fetch(fallbackUrl, {
         headers: { Range: rangeHeader },
