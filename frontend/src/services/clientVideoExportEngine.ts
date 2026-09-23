@@ -12,6 +12,7 @@ import { api } from './api';
 
 export interface ClientExportOptions {
   metadata: any;
+  url?: string;
   trimStart: number;
   trimEnd?: number;
   format?: 'mp4' | 'mp3' | 'wav' | 'm4a' | 'captions' | string;
@@ -62,6 +63,7 @@ export class ClientVideoExportEngine {
   static async exportClip(options: ClientExportOptions): Promise<ClientExportResult> {
     const {
       metadata,
+      url: explicitUrl,
       trimStart = 0,
       trimEnd,
       format = 'mp4',
@@ -87,8 +89,13 @@ export class ClientVideoExportEngine {
 
     // If formats are missing (e.g. from an earlier lightweight load or fallback), fetch full metadata from backend
     if (!tracks.videoFormat && !tracks.combinedFormat) {
-      const pageUrl = currentMetadata?.webpage_url || currentMetadata?.url;
-      if (pageUrl && (pageUrl.includes('youtube.com') || pageUrl.includes('youtu.be') || pageUrl.includes('twitch.tv'))) {
+      const pageUrl =
+        explicitUrl ||
+        currentMetadata?.webpage_url ||
+        currentMetadata?.url ||
+        (currentMetadata?.id ? `https://www.youtube.com/watch?v=${currentMetadata.id}` : undefined);
+
+      if (pageUrl) {
         if (onProgress) onProgress('🔍 Retrieving high-resolution video streams...', 5);
         try {
           const res = await api.video.getMetadata(pageUrl);

@@ -1020,7 +1020,12 @@ export default function ClipFlowEditor() {
 
       try {
         const exportResult = await ClientVideoExportEngine.exportClip({
-          metadata,
+          metadata: {
+            ...metadata,
+            url: activeUrl,
+            webpage_url: activeUrl,
+          },
+          url: activeUrl,
           trimStart: effectiveTrimStart,
           trimEnd: effectiveTrimEnd,
           format: effectiveFormat,
@@ -1062,16 +1067,79 @@ export default function ClipFlowEditor() {
         });
         return;
       } catch (browserExportErr: any) {
-        console.warn('[ClipFlow Editor] In-browser export engine encountered error:', browserExportErr);
-        const errMsg = browserExportErr?.message || 'In-browser render failed';
-        setDownloadStatus('error');
-        setDownloadProgress(0);
-        setStatusMessage(`❌ Export error: ${errMsg}`);
-        setTimeout(() => {
-          setStatusMessage('');
-          setDownloadStatus('idle');
-        }, 6000);
-        return;
+        console.warn('[ClipFlow Editor] In-browser export engine encountered error, falling back to high-speed cloud renderer:', browserExportErr);
+        setDownloadProgress(40);
+        setStatusMessage('⚡ In-browser render unavailable. Switching to high-speed cloud renderer...');
+
+        try {
+          const res = await api.video.download({
+            url: activeUrl,
+            format: effectiveFormat,
+            quality: downloadQuality,
+            audioBitrate: downloadAudioBitrate,
+            trimStart: effectiveTrimStart,
+            trimEnd: effectiveTrimEnd,
+            aspectRatio: (aspectRatio === '16:9' && !cropBox) ? undefined : aspectRatio,
+            fitMode,
+            cropPosition,
+            cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
+            customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
+            mode: 'server',
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || `Server export failed (${res.status})`);
+          }
+
+          setDownloadProgress(85);
+          setStatusMessage('⬇️ Downloading your processed clip...');
+          const data = await res.json();
+          if (data.downloadUrl) {
+            const fileRes = await api.video.fetchFile(data.downloadUrl);
+            if (!fileRes.ok) throw new Error('Failed to retrieve clip from server');
+            const blob = await fileRes.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = data.fileName || `${customFileName || metadata?.title || 'ClipFlow_Clip'}.${effectiveFormat}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+          }
+
+          setDownloadStatus('success');
+          setDownloadProgress(100);
+          setStatusMessage('🎉 Clip processed and downloaded successfully via cloud engine!');
+
+          setTimeout(() => {
+            setStatusMessage('');
+            setDownloadStatus('idle');
+            setDownloadProgress(0);
+          }, 3000);
+
+          saveToHistory({
+            title: customFileName || metadata?.title || 'ClipFlow Video',
+            url: activeUrl,
+            platform: isYouTube ? 'youtube' : 'video',
+            format: effectiveFormat,
+            quality: downloadQuality,
+            duration: Math.max(1, effectiveTrimEnd - effectiveTrimStart),
+          });
+          return;
+        } catch (serverFallbackErr: any) {
+          console.error('[ClipFlow Editor] Both browser and cloud export failed:', serverFallbackErr);
+          const errMsg = serverFallbackErr?.message || browserExportErr?.message || 'Export failed';
+          setDownloadStatus('error');
+          setDownloadProgress(0);
+          setStatusMessage(`❌ Export error: ${errMsg}`);
+          setTimeout(() => {
+            setStatusMessage('');
+            setDownloadStatus('idle');
+          }, 6000);
+          return;
+        }
       }
 
       setDownloadStatus('success');

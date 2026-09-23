@@ -27,8 +27,7 @@ export default {
       });
     }
 
-    const requestUrl = new URL(request.url);
-    const targetUrl = requestUrl.searchParams.get('url');
+    let targetUrl = requestUrl.searchParams.get('url');
 
     if (!targetUrl) {
       return new Response(JSON.stringify({ error: 'Missing "url" query parameter' }), {
@@ -38,6 +37,17 @@ export default {
           'Access-Control-Allow-Origin': '*',
         },
       });
+    }
+
+    // Defensive unwrap: if an already-wrapped proxy URL is sent, extract the inner upstream URL
+    if (targetUrl.includes('proxy-stream?url=') || targetUrl.includes('?url=')) {
+      try {
+        const parsed = new URL(targetUrl);
+        const inner = parsed.searchParams.get('url');
+        if (inner && (inner.startsWith('http://') || inner.startsWith('https://'))) {
+          targetUrl = inner;
+        }
+      } catch (_) {}
     }
 
     try {

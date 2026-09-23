@@ -8,7 +8,8 @@
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { toBlobURL } from '@ffmpeg/util';
-import { resolveRelayUrl, fetchSidxSlice } from './clientMediaRangeFetcher';
+import { resolveRelayUrl, fetchSidxSlice, unwrapStreamUrl } from './clientMediaRangeFetcher';
+import { api } from './api';
 
 export interface FFmpegClipOptions {
   videoUrl: string;
@@ -95,12 +96,34 @@ async function fetchStreamChunk(
   startByte: number,
   endByte: number
 ): Promise<{ chunk: Uint8Array; isEof: boolean }> {
-  const relayUrl = resolveRelayUrl(directUrl);
-  const response = await fetch(relayUrl, {
-    headers: {
-      Range: `bytes=${startByte}-${endByte}`,
-    },
-  });
+  const cleanUrl = unwrapStreamUrl(directUrl);
+  const relayUrl = resolveRelayUrl(cleanUrl);
+  const rangeHeader = `bytes=${startByte}-${endByte}`;
+
+  let response: Response;
+  try {
+    response = await fetch(relayUrl, {
+      headers: { Range: rangeHeader },
+    });
+
+    if (!response.ok && response.status !== 206 && response.status !== 416 && relayUrl.includes('workers.dev')) {
+      console.warn(`[ClientFFmpegEngine] Relay chunk fetch returned ${response.status}. Retrying via backend proxy...`);
+      const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
+      response = await fetch(fallbackUrl, {
+        headers: { Range: rangeHeader },
+      });
+    }
+  } catch (err) {
+    if (relayUrl.includes('workers.dev')) {
+      console.warn('[ClientFFmpegEngine] Relay network error, retrying via backend proxy:', err);
+      const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
+      response = await fetch(fallbackUrl, {
+        headers: { Range: rangeHeader },
+      });
+    } else {
+      throw err;
+    }
+  }
 
   // 416 means startByte is beyond the end of the file (EOF reached)
   if (response.status === 416) {
@@ -132,8 +155,23 @@ async function fetchDirectMediaStream(
   directUrl: string,
   onProgress?: (percent: number) => void
 ): Promise<Uint8Array> {
-  const relayUrl = resolveRelayUrl(directUrl);
-  const response = await fetch(relayUrl);
+  const cleanUrl = unwrapStreamUrl(directUrl);
+  const relayUrl = resolveRelayUrl(cleanUrl);
+  let response: Response;
+  try {
+    response = await fetch(relayUrl);
+    if (!response.ok && relayUrl.includes('workers.dev')) {
+      const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
+      response = await fetch(fallbackUrl);
+    }
+  } catch (err) {
+    if (relayUrl.includes('workers.dev')) {
+      const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
+      response = await fetch(fallbackUrl);
+    } else {
+      throw err;
+    }
+  }
 
   if (!response.ok) {
     throw new Error(`Media direct download failed: HTTP ${response.status} ${response.statusText}`);

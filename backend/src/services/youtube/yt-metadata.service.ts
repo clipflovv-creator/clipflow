@@ -26,7 +26,7 @@ interface Strategy {
 }
 
 export class YouTubeMetadataService {
-  static async getMetadata(url: string, ytDlpBin: string): Promise<any> {
+  static async getMetadata(url: string, ytDlpBin: string, _retries: number = 1): Promise<any> {
     const cookieArg = getYoutubeCookieArg();
     const proxyFlag = getProxyFlag();
     const poTokenFlag = getPoTokenFlag();

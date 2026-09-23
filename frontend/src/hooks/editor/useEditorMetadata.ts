@@ -170,6 +170,8 @@ export function useEditorMetadata(
                     uploader: oembed.author_name || 'YouTube Creator',
                     duration: 0,
                     duration_string: '00:00',
+                    webpage_url: cleanTargetUrl,
+                    url: cleanTargetUrl,
                     formats: [],
                     _synthetic: true,
                   };

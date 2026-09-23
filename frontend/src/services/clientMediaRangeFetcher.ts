@@ -13,28 +13,55 @@ import { api } from './api';
 const EDGE_RELAY_URL = (import.meta.env.VITE_EDGE_RELAY_URL as string) || 'https://yt-range-relay.clipflovv.workers.dev';
 
 /**
+ * Unwraps any nested proxy prefixes (e.g. localhost or Render proxy-stream endpoints)
+ * to return the true direct upstream media URL (e.g. Googlevideo).
+ */
+export function unwrapStreamUrl(directUrl: string): string {
+  if (!directUrl) return '';
+  let url = directUrl.trim();
+  if (url.includes('/api/video/proxy-stream?url=') || url.includes('/api/video/stream-range?url=')) {
+    const parts = url.split(/\/(?:proxy-stream|stream-range)\?url=/);
+    if (parts[1]) {
+      try {
+        url = decodeURIComponent(parts[1]);
+      } catch {}
+    }
+  }
+  return url;
+}
+
+/**
  * Wraps a direct media stream URL (e.g. Googlevideo) with CORS proxy / Edge Relay.
  */
 export function resolveRelayUrl(directUrl: string): string {
   if (!directUrl) return '';
 
-  // If already relative or hosted on same domain
-  if (directUrl.startsWith('/') || directUrl.startsWith('blob:')) {
-    return directUrl;
+  const cleanUrl = unwrapStreamUrl(directUrl);
+
+  // If already relative or hosted on same domain or blob
+  if (cleanUrl.startsWith('/') || cleanUrl.startsWith('blob:')) {
+    return cleanUrl;
+  }
+
+  // If URL points to localhost or private network, Cloudflare Edge Relay cannot access it.
+  // Directly route to local backend streaming proxy.
+  const isLocalHost = cleanUrl.includes('localhost') || cleanUrl.includes('127.0.0.1');
+  if (isLocalHost) {
+    return api.video.getProxyStreamUrl(cleanUrl);
   }
 
   // 1. Cloudflare Worker Edge Relay (Zero Render Load & Unlimited Bandwidth)
   if (EDGE_RELAY_URL) {
     const base = EDGE_RELAY_URL.endsWith('/') ? EDGE_RELAY_URL : `${EDGE_RELAY_URL}/`;
-    return `${base}?url=${encodeURIComponent(directUrl)}`;
+    return `${base}?url=${encodeURIComponent(cleanUrl)}`;
   }
 
   // 2. Dev / Fallback: Backend streaming range proxy (Pipes directly without disk storage)
-  return api.video.getProxyStreamUrl(directUrl);
+  return api.video.getProxyStreamUrl(cleanUrl);
 }
 
 /**
- * Fetches an exact byte range from a stream URL.
+ * Fetches an exact byte range from a stream URL with automatic fallback.
  */
 export async function fetchByteRange(
   url: string,
@@ -42,16 +69,40 @@ export async function fetchByteRange(
   endByte?: number,
   onProgress?: (receivedBytes: number, totalBytes: number) => void
 ): Promise<ArrayBuffer> {
-  const proxiedUrl = resolveRelayUrl(url);
+  const cleanUrl = unwrapStreamUrl(url);
+  const proxiedUrl = resolveRelayUrl(cleanUrl);
   const rangeHeader = typeof endByte === 'number' && endByte >= startByte
     ? `bytes=${startByte}-${endByte}`
     : `bytes=${startByte}-`;
 
-  const response = await fetch(proxiedUrl, {
-    headers: {
-      Range: rangeHeader,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(proxiedUrl, {
+      headers: {
+        Range: rangeHeader,
+      },
+    });
+
+    // If Cloudflare Edge Relay returned an error (e.g. 403, 502), transparently fall back to backend proxy
+    if (!response.ok && response.status !== 206 && proxiedUrl.includes('workers.dev')) {
+      console.warn(`[MediaRangeFetcher] Edge relay returned status ${response.status}. Falling back to backend proxy...`);
+      const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
+      response = await fetch(fallbackUrl, {
+        headers: { Range: rangeHeader },
+      });
+    }
+  } catch (netErr) {
+    // Network failure on relay: fallback to backend proxy
+    if (proxiedUrl.includes('workers.dev')) {
+      console.warn('[MediaRangeFetcher] Edge relay network error, falling back to backend proxy:', netErr);
+      const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
+      response = await fetch(fallbackUrl, {
+        headers: { Range: rangeHeader },
+      });
+    } else {
+      throw netErr;
+    }
+  }
 
   if (!response.ok && response.status !== 206) {
     throw new Error(`Range fetch failed with status ${response.status}: ${response.statusText}`);
@@ -170,7 +221,9 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
     return { videoFormat: null, audioFormat: null, combinedFormat: null };
   }
 
-  const formats: any[] = metadata.formats || [];
+  const formats: any[] = (metadata.formats && metadata.formats.length > 0)
+    ? metadata.formats
+    : (metadata.video_formats || []);
   const cleanQ = targetQuality.toLowerCase().replace('p', '');
   const isOriginal = cleanQ === 'original' || cleanQ === 'source' || cleanQ === 'best' || cleanQ === 'max';
   const targetHeight = isOriginal ? 99999 : (parseInt(cleanQ, 10) || 1080);

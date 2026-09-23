@@ -421,7 +421,15 @@ router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Respons
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       'Accept': '*/*',
     };
-    if (streamUrl.includes('twimg.com')) {
+    if (streamUrl.includes('googlevideo.com') || streamUrl.includes('youtube.com')) {
+      fetchHeaders['Referer'] = 'https://www.youtube.com/';
+      fetchHeaders['Origin'] = 'https://www.youtube.com';
+      if (streamUrl.includes('c=IOS')) {
+        fetchHeaders['User-Agent'] = 'com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)';
+      } else {
+        fetchHeaders['User-Agent'] = 'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip';
+      }
+    } else if (streamUrl.includes('twimg.com')) {
       fetchHeaders['Referer'] = 'https://x.com/';
       fetchHeaders['Origin'] = 'https://x.com';
     } else if (streamUrl.includes('instagram.com') || streamUrl.includes('cdninstagram.com')) {
@@ -558,20 +566,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
   try {
     const metadata: any = await YtDlpService.getVideoMetadata(url);
 
-    // Helper: YouTube CDN (googlevideo.com) URLs don't send CORS headers.
-    // Browser fetch() from FFmpeg.wasm will be blocked without a proxy.
-    // Route all YouTube stream URLs through our /proxy-stream endpoint.
-    const host = `${req.protocol}://${req.get('host')}`;
-    const isYouTubeCdn = (u: string): boolean => {
-      if (!u) return false;
-      const l = u.toLowerCase();
-      return l.includes('googlevideo.com') || (l.includes('youtube.com') && l.includes('videoplayback'));
-    };
-    const proxyFmtUrl = (rawUrl: string): string => {
-      if (!rawUrl || !isYouTubeCdn(rawUrl)) return rawUrl;
-      return `${host}/api/video/proxy-stream?url=${encodeURIComponent(rawUrl)}`;
-    };
-
+    // Return direct stream URLs cleanly so client can leverage Cloudflare Worker Edge Relay.
     // Prioritize formats with BOTH video AND audio so UI preview can play sound
     const audioAndVideoFormats = (metadata.formats || []).filter(
       (f: any) => f.url && f.acodec && f.acodec !== 'none' && f.vcodec && f.vcodec !== 'none'
@@ -587,7 +582,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
     // Only video formats (never pick an audio-only stream as directStreamUrl which is meant for video display)
     const videoFormats = (metadata.formats || []).filter((f: any) => f.url && f.vcodec && f.vcodec !== 'none');
 
-    const rawDirectStreamUrl =
+    const directStreamUrl =
       format1080?.url ||
       format720?.url ||
       (progressiveMp4.length > 0 ? progressiveMp4[progressiveMp4.length - 1].url : undefined) ||
@@ -595,8 +590,6 @@ router.post('/metadata', async (req: Request, res: Response) => {
       metadata.direct_stream_url ||
       metadata.url ||
       (videoFormats.length > 0 ? videoFormats[videoFormats.length - 1]?.url : undefined);
-
-    const directStreamUrl = proxyFmtUrl(rawDirectStreamUrl);
 
     let parsedDuration = typeof metadata.duration === 'number' && metadata.duration > 0 ? metadata.duration : undefined;
     if (!parsedDuration && metadata.duration_string) {
@@ -677,7 +670,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
         is_default: f.is_default || (typeof f.format_note === 'string' && f.format_note.toLowerCase().includes('default')),
         tbr: f.tbr,
         abr: f.abr,
-        url: proxyFmtUrl(f.url),
+        url: f.url,
       })),
       video_formats: (metadata.formats || [])
         .filter((f: any) => f.url && f.vcodec && f.vcodec !== 'none')
@@ -692,7 +685,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
           acodec: f.acodec,
           tbr: f.tbr,
           filesize: f.filesize || f.filesize_approx,
-          url: proxyFmtUrl(f.url),
+          url: f.url,
         })),
       audio_formats: (metadata.formats || [])
         .filter((f: any) => f.url && f.acodec && f.acodec !== 'none')
@@ -707,7 +700,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
           is_default: f.is_default || (typeof f.format_note === 'string' && f.format_note.toLowerCase().includes('default')),
           abr: f.abr,
           filesize: f.filesize || f.filesize_approx,
-          url: proxyFmtUrl(f.url),
+          url: f.url,
         })),
     };
 
