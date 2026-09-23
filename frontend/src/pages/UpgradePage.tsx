@@ -269,12 +269,13 @@ export default function UpgradePage() {
           <div className="flex items-center gap-2">
             <img src="/logo.ico" alt="ClipFlow" className="w-5 h-5 object-contain" />
             <span className="text-zinc-400 font-bold">ClipFlow</span>
-            <span>— by Cliy</span>
+            <span>— by <a href="https://cliy.me" target="_blank" rel="noopener noreferrer" className="text-zinc-400 hover:text-white transition-colors">Cliy</a></span>
           </div>
           <div className="flex items-center gap-6">
             <Link to="/" className="hover:text-zinc-300 transition-colors">Home</Link>
             <Link to="/editor" className="hover:text-zinc-300 transition-colors">Studio</Link>
             <Link to="/terms" className="hover:text-zinc-300 transition-colors">Terms of Service</Link>
+            <a href="https://cliy.me" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-300 transition-colors font-mono">cliy.me</a>
             <span>© 2026 Cliy · ClipFlow</span>
           </div>
         </div>

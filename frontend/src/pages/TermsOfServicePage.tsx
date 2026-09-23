@@ -697,8 +697,8 @@ export default function TermsOfServicePage() {
 
           {/* Document Footer Note */}
           <div className="pt-8 border-t border-zinc-800 text-xs text-zinc-500 font-mono space-y-1">
-            <p>© 2026 cliy. All rights reserved.</p>
-            <p>cliy · clipflow.cliy.me · clipflovv@gmail.com</p>
+            <p>© 2026 <a href="https://cliy.me" target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-300">cliy</a>. All rights reserved.</p>
+            <p><a href="https://cliy.me" target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-300">cliy.me</a> · <a href="https://clipflow.cliy.me" target="_blank" rel="noopener noreferrer" className="underline hover:text-zinc-300">clipflow.cliy.me</a> · clipflovv@gmail.com</p>
           </div>
         </main>
       </div>

@@ -877,7 +877,9 @@ export default function ClipFlowHome() {
 
             {/* Direct Contact Information (Clean seamless text, no extra boxes) */}
             <div className="pt-4 flex items-center justify-center gap-2 sm:gap-3 text-xs text-zinc-400 flex-wrap">
-              <span>Contact: <strong className="text-white font-semibold">Cliy</strong></span>
+              <span>Contact: <a href="https://cliy.me" target="_blank" rel="noopener noreferrer" className="text-white font-semibold hover:underline">Cliy</a></span>
+              <span className="text-zinc-600">•</span>
+              <span>Website: <a href="https://cliy.me" target="_blank" rel="noopener noreferrer" className="text-zinc-300 hover:text-white hover:underline font-mono">cliy.me</a></span>
               <span className="text-zinc-600">•</span>
               <span>Email: <a href="mailto:clipflovv@gmail.com" className="text-zinc-300 hover:text-white hover:underline font-mono">clipflovv@gmail.com</a></span>
             </div>
@@ -893,10 +895,17 @@ export default function ClipFlowHome() {
                 <div className="flex items-center gap-2">
                   <img src="/logo.ico" alt="ClipFlow" className="w-6 h-6 object-contain" />
                   <span className="text-sm font-bold text-white tracking-tight">ClipFlow</span>
-                  <span className="text-[11px] text-zinc-500 font-medium">by Cliy</span>
+                  <a
+                    href="https://cliy.me"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors font-medium"
+                  >
+                    by Cliy
+                  </a>
                 </div>
                 <p className="text-xs text-zinc-400 leading-relaxed">
-                  ClipFlow is a product by Cliy, built to make video editing and content creation simpler for creators around the world.
+                  ClipFlow is a product by <a href="https://cliy.me" target="_blank" rel="noopener noreferrer" className="text-zinc-300 hover:text-white underline underline-offset-2 transition-colors">Cliy</a>, built to make video editing and content creation simpler for creators around the world.
                 </p>
               </div>
 
@@ -1061,10 +1070,23 @@ export default function ClipFlowHome() {
 
             {/* Bottom Bar */}
             <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
-              <p>© 2026 Cliy · ClipFlow</p>
-              <p className="text-[11px] text-zinc-600">
-                Built for creators and media teams worldwide
+              <p>
+                © 2026 <a href="https://cliy.me" target="_blank" rel="noopener noreferrer" className="text-zinc-400 hover:text-white transition-colors">Cliy</a> · ClipFlow
               </p>
+              <div className="flex items-center gap-4 text-xs">
+                <a
+                  href="https://cliy.me"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-zinc-400 hover:text-white transition-colors font-mono"
+                >
+                  cliy.me
+                </a>
+                <span className="text-zinc-700">•</span>
+                <p className="text-[11px] text-zinc-600">
+                  Built for creators and media teams worldwide
+                </p>
+              </div>
             </div>
           </div>
         </footer>

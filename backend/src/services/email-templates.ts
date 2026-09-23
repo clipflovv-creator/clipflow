@@ -101,7 +101,7 @@ function emailLayout({ title, preheader, content }: BaseLayoutOptions): string {
                   </td>
                   <td valign="middle">
                     <span style="font-size: 16px; font-weight: 700; color: #0f172a; letter-spacing: -0.2px;">ClipFlow</span>
-                    <span style="font-size: 12px; font-weight: 500; color: #64748b; margin-left: 6px;">by Cliy</span>
+                    <span style="font-size: 12px; font-weight: 500; color: #64748b; margin-left: 6px;">by <a href="https://cliy.me" target="_blank" style="color: #64748b; text-decoration: none;">Cliy</a></span>
                   </td>
                 </tr>
               </table>
@@ -121,11 +121,11 @@ function emailLayout({ title, preheader, content }: BaseLayoutOptions): string {
               <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
                 <tr>
                   <td style="font-size: 12px; line-height: 1.5; color: #94a3b8;">
-                    <p style="margin: 0 0 4px 0;">
-                      ClipFlow is a product by Cliy.
+                    <p style="margin: 0 0 6px 0;">
+                      ClipFlow is a product by <a href="https://cliy.me" target="_blank" style="color: #64748b; text-decoration: underline;">Cliy</a> (<a href="https://cliy.me" target="_blank" style="color: #64748b; text-decoration: none;">cliy.me</a>).
                     </p>
                     <p style="margin: 0;">
-                      &copy; ${new Date().getFullYear()} Cliy. All rights reserved.
+                      &copy; ${new Date().getFullYear()} <a href="https://cliy.me" target="_blank" style="color: #94a3b8; text-decoration: none;">cliy.me</a> &bull; All rights reserved.
                     </p>
                   </td>
                 </tr>
@@ -236,7 +236,7 @@ If you did not request this code, you can safely ignore this email.
 Thanks,
 The Cliy Team
 
-ClipFlow is a product by Cliy.
+ClipFlow is a product by Cliy (https://cliy.me).
 ${frontendUrl}`;
 }
 
@@ -336,7 +336,7 @@ If you did not request a password reset, you can safely ignore this email. Your 
 Thanks,
 The Cliy Team
 
-ClipFlow is a product by Cliy.
+ClipFlow is a product by Cliy (https://cliy.me).
 ${frontendUrl}`;
 }
 
@@ -429,7 +429,7 @@ We'd love to have you with us as we build the next generation of creator tools.
 Thanks,
 The Cliy Team
 
-ClipFlow is a product by Cliy.
+ClipFlow is a product by Cliy (https://cliy.me).
 ${frontendUrl}`;
 }
 
