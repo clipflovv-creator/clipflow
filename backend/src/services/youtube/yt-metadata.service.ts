@@ -1,88 +1,99 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import path from 'path';
-import fs from 'fs';
 
 import { getYoutubeCookieArg } from '../../utils/cookie-resolver.util.js';
 
 const execAsync = promisify(exec);
 
 /**
- * Returns extra bypass flags read from environment variables:
- *   YTDLP_PROXY       - e.g. "http://user:pass@proxy.webshare.io:80"
- *                       Routes yt-dlp through a residential proxy to bypass datacenter IP blocks.
- *   YTDLP_PO_TOKEN    - YouTube PO token (from browser DevTools → Network → innertube requests).
- *                       Set alongside YOUTUBE_COOKIES for the best bypass rate.
+ * Returns proxy flags from YTDLP_PROXY env var.
+ * Returns both a proxy version and a no-proxy version so strategies can alternate.
  */
-function getBypassFlags(): string {
-  const parts: string[] = [];
+function getProxyFlag(): string {
   const proxy = process.env.YTDLP_PROXY?.trim();
-  if (proxy) {
-    parts.push(`--proxy "${proxy}"`);
-    console.log('[YouTubeMetadataService] Using proxy for YouTube requests.');
-  }
+  return proxy ? `--proxy "${proxy}"` : '';
+}
+
+function getPoTokenFlag(): string {
   const poToken = process.env.YTDLP_PO_TOKEN?.trim();
-  if (poToken) {
-    parts.push(`--extractor-args "youtube:po_token=web+${poToken}"`);
-  }
-  return parts.join(' ');
+  return poToken ? `--extractor-args "youtube:po_token=web+${poToken}"` : '';
 }
 
 export class YouTubeMetadataService {
   /**
-   * Fetches full YouTube video metadata, title, duration, uploader, thumbnails, and DASH formats.
-   * Uses multiple client-spoofing strategies to prevent datacenter IP 429 / 403 blocks on Render / cloud hosts.
-   * Set YTDLP_PROXY env var to a residential HTTP/SOCKS5 proxy URL for most reliable results.
+   * Fetches full YouTube video metadata using multiple client/proxy strategies.
+   * Logs the full error message from each failed strategy for diagnosis.
    */
   static async getMetadata(url: string, ytDlpBin: string, retries = 2): Promise<any> {
     const cookieArg = getYoutubeCookieArg();
-    const bypassFlags = getBypassFlags();
+    const proxyFlag = getProxyFlag();
+    const poTokenFlag = getPoTokenFlag();
 
-    // Client strategies: Default visionos/web returns full 1080p/720p/480p DASH formats with direct URLs.
-    // Fallback to embedded TV / mobile clients if cloud datacenter IP blocks the primary extractor.
-    const clientStrategies = [
-      '',
-      '--extractor-args "youtube:player_client=visionos"',
-      '--extractor-args "youtube:player_client=tv_embedded,web_embedded,android"',
-      '--extractor-args "youtube:player_client=tv,android"',
-      '--extractor-args "youtube:player_client=visionos,android"',
-      '--extractor-args "youtube:player_client=android,ios,mweb"',
-      '--extractor-args "youtube:player_client=android"',
+    // Build an ordered set of (clientArg, useProxy) strategy combinations.
+    // Try with proxy first (if available), then without proxy as fallback.
+    // This is critical: datacenter IPs are blocked, but some strategies work
+    // without proxy when cookies are fresh.
+    const clientArgs = [
+      '',                                                                        // default web client
+      '--extractor-args "youtube:player_client=tv_embedded"',                   // TV embedded — bypasses many blocks
+      '--extractor-args "youtube:player_client=android"',                       // Android client
+      '--extractor-args "youtube:player_client=ios"',                           // iOS client
+      '--extractor-args "youtube:player_client=web_creator"',                   // Web Creator (less restricted)
+      '--extractor-args "youtube:player_client=tv,android"',                    // TV + Android combo
+      '--extractor-args "youtube:player_client=tv_embedded,web_embedded"',      // Embedded combo
+      '--extractor-args "youtube:player_client=android,ios,mweb"',              // Mobile combo
+      '--extractor-args "youtube:player_client=visionos,android"',              // visionOS combo
     ];
+
+    // Interleave: proxy → no-proxy alternation for each client
+    const strategies: Array<{ clientArg: string; useProxy: boolean }> = [];
+    for (const clientArg of clientArgs) {
+      if (proxyFlag) {
+        strategies.push({ clientArg, useProxy: true });
+      }
+      strategies.push({ clientArg, useProxy: false });
+    }
+
+    const baseFlags = `--no-check-certificate --no-playlist --dump-json`;
 
     let lastErr: any;
     let lowResFallback: any = null;
 
-    for (let attempt = 0; attempt < clientStrategies.length && attempt <= retries + 2; attempt++) {
-      const clientArg = clientStrategies[attempt];
-      const flags = `--js-runtimes node ${clientArg} ${bypassFlags} ${cookieArg}--no-warnings --no-check-certificate --no-playlist --dump-json`;
+    for (let attempt = 0; attempt < strategies.length; attempt++) {
+      const { clientArg, useProxy } = strategies[attempt];
+      const proxy = useProxy ? proxyFlag : '--proxy ""'; // empty string = no proxy in yt-dlp
+      const flags = [clientArg, poTokenFlag, proxy, cookieArg, baseFlags]
+        .filter(Boolean)
+        .join(' ');
+
+      const cmd = `"${ytDlpBin}" ${flags} "${url}"`;
 
       try {
-        const { stdout } = await execAsync(
-          `"${ytDlpBin}" ${flags} "${url}"`,
-          { maxBuffer: 1024 * 1024 * 100 }
-        );
+        const { stdout } = await execAsync(cmd, { maxBuffer: 1024 * 1024 * 100 });
         const parsed = JSON.parse(stdout);
         const videoFormats = (parsed.formats || []).filter(
           (f: any) => f.url && f.vcodec && f.vcodec !== 'none'
         );
         const hasHd = videoFormats.some((f: any) => (f.height || 0) >= 720);
 
-        // If strategy returned full HD formats (or 3+ diverse video streams), return immediately
         if (hasHd || videoFormats.length >= 3) {
+          console.log(`[YouTube Metadata] Strategy ${attempt + 1} succeeded (client=${clientArg || 'default'}, proxy=${useProxy})`);
           return parsed;
         }
 
-        // If it only got low-res (e.g. format 18 360p), save as fallback and test if next strategy yields HD
         if (!lowResFallback && parsed) {
           lowResFallback = parsed;
         }
       } catch (err: any) {
         lastErr = err;
-        const msg = (err?.message || String(err)).toLowerCase();
-        console.warn(`[YouTube Metadata] Strategy ${attempt + 1} (${clientArg || 'default'}) failed:`, msg.split('\n')[0]);
-        if (attempt < clientStrategies.length - 1) {
-          await new Promise((r) => setTimeout(r, 800));
+        // Log FULL error (stderr) for diagnostics — critical for debugging Render bot blocks
+        const fullMsg = (err?.stderr || err?.message || String(err)).trim();
+        console.warn(
+          `[YouTube Metadata] Strategy ${attempt + 1} failed (client=${clientArg || 'default'}, proxy=${useProxy}):\n${fullMsg}`
+        );
+
+        if (attempt < strategies.length - 1) {
+          await new Promise((r) => setTimeout(r, 600));
           continue;
         }
       }

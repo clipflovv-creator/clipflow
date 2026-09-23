@@ -100,21 +100,38 @@ export class YouTubeDownloaderService {
     const startTimeStr = formatSecondsToTime(trimStart);
     const endTimeStr = isTrimmed && trimEnd ? formatSecondsToTime(trimEnd) : '';
 
-    const buildArgs = (useCookies: boolean): string[] => {
+    const proxy = process.env.YTDLP_PROXY?.trim();
+    const poToken = process.env.YTDLP_PO_TOKEN?.trim();
+
+    // Client strategies to try in order
+    const clientStrategies = [
+      '',
+      '--extractor-args "youtube:player_client=tv_embedded"',
+      '--extractor-args "youtube:player_client=android"',
+      '--extractor-args "youtube:player_client=ios"',
+      '--extractor-args "youtube:player_client=tv,android"',
+      '--extractor-args "youtube:player_client=tv_embedded,web_embedded"',
+      '--extractor-args "youtube:player_client=android,ios,mweb"',
+    ];
+
+    const buildArgs = (clientArg: string, useProxy: boolean): string[] => {
       const ffmpegLocFlag = getFFmpegLocationFlag(ffmpegBin);
       const args: string[] = [
         `"${ytDlpBin}"`,
         ...(ffmpegLocFlag ? [ffmpegLocFlag] : []),
-        '--js-runtimes node',
-        '--extractor-args "youtube:player_client=tv_embedded,web_embedded,android,ios,mweb"',
+        '--no-check-certificate',
+        '--no-playlist',
       ];
 
-      // Proxy bypass for datacenter IP blocks (set YTDLP_PROXY env var on Render)
-      const proxy = process.env.YTDLP_PROXY?.trim();
-      if (proxy) args.push(`--proxy "${proxy}"`);
+      if (clientArg) args.push(clientArg);
 
-      // PO token support (set YTDLP_PO_TOKEN env var for extra auth bypass)
-      const poToken = process.env.YTDLP_PO_TOKEN?.trim();
+      if (useProxy && proxy) {
+        args.push(`--proxy "${proxy}"`);
+      } else if (proxy) {
+        // Explicitly disable proxy (override any system proxy)
+        args.push('--proxy ""');
+      }
+
       if (poToken) args.push(`--extractor-args "youtube:po_token=web+${poToken}"`);
 
       if (isTrimmed) {
@@ -131,15 +148,9 @@ export class YouTubeDownloaderService {
         args.push('-f', `"${ytFormat}"`, '--merge-output-format', 'mp4');
       }
 
-      if (isTrimmed) {
-        args.push('--force-keyframes-at-cuts');
-      }
+      if (isTrimmed) args.push('--force-keyframes-at-cuts');
 
-      args.push('--no-playlist');
-
-      if (useCookies && cookiesFile) {
-        args.push(`--cookies "${cookiesFile}"`);
-      }
+      if (cookiesFile) args.push(`--cookies "${cookiesFile}"`);
 
       args.push('-o', `"${rawTarget}"`, `"${url}"`);
       return args;
@@ -147,20 +158,38 @@ export class YouTubeDownloaderService {
 
     if (onProgress) onProgress('⬇️ Downloading high-resolution clip stream...', 30);
 
-    const initialArgs = buildArgs(Boolean(cookiesFile));
-    console.log(`[YouTube Downloader] 🚀 Fetching clip stream via yt-dlp:\n${initialArgs.join(' ')}`);
+    // Interleave proxy/no-proxy for each client strategy
+    const downloadStrategies: Array<{ clientArg: string; useProxy: boolean }> = [];
+    for (const clientArg of clientStrategies) {
+      if (proxy) downloadStrategies.push({ clientArg, useProxy: true });
+      downloadStrategies.push({ clientArg, useProxy: false });
+    }
 
-    try {
-      await execAsync(initialArgs.join(' '), { maxBuffer: 500 * 1024 * 1024, timeout: 30 * 60 * 1000 });
-    } catch (err: any) {
-      if (cookiesFile && (err.message?.includes('403') || err.message?.includes('Forbidden'))) {
-        console.warn('[YouTube Downloader] ⚠️ Download with cookies returned 403. Retrying without cookies...');
-        const retryArgs = buildArgs(false);
-        console.log(`[YouTube Downloader] 🔄 Retry command:\n${retryArgs.join(' ')}`);
-        await execAsync(retryArgs.join(' '), { maxBuffer: 500 * 1024 * 1024, timeout: 30 * 60 * 1000 });
-      } else {
-        throw err;
+    let lastDownloadErr: any;
+    let downloaded = false;
+
+    for (let attempt = 0; attempt < downloadStrategies.length; attempt++) {
+      const { clientArg, useProxy } = downloadStrategies[attempt];
+      const args = buildArgs(clientArg, useProxy);
+      console.log(`[YouTube Downloader] Strategy ${attempt + 1}/${downloadStrategies.length} (client=${clientArg || 'default'}, proxy=${useProxy})`);
+
+      try {
+        await execAsync(args.join(' '), { maxBuffer: 500 * 1024 * 1024, timeout: 30 * 60 * 1000 });
+        downloaded = true;
+        console.log(`[YouTube Downloader] Strategy ${attempt + 1} succeeded`);
+        break;
+      } catch (err: any) {
+        lastDownloadErr = err;
+        const fullMsg = (err?.stderr || err?.message || String(err)).trim();
+        console.warn(`[YouTube Downloader] Strategy ${attempt + 1} failed:\n${fullMsg}`);
+        if (attempt < downloadStrategies.length - 1) {
+          await new Promise((r) => setTimeout(r, 600));
+        }
       }
+    }
+
+    if (!downloaded) {
+      throw lastDownloadErr;
     }
 
     if (!fs.existsSync(rawTarget) || fs.statSync(rawTarget).size === 0) {
