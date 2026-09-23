@@ -102,23 +102,24 @@ export class YouTubeDownloaderService {
 
     const proxy = process.env.YTDLP_PROXY?.trim();
     const poToken = process.env.YTDLP_PO_TOKEN?.trim();
+    const NODE_BIN = process.execPath;
 
-    // Client strategies to try in order
-    const clientStrategies = [
-      '',
-      '--extractor-args "youtube:player_client=tv_embedded"',
-      '--extractor-args "youtube:player_client=android"',
-      '--extractor-args "youtube:player_client=ios"',
-      '--extractor-args "youtube:player_client=tv,android"',
-      '--extractor-args "youtube:player_client=tv_embedded,web_embedded"',
-      '--extractor-args "youtube:player_client=android,ios,mweb"',
+    // android-based clients reject --cookies; web/ios/mweb need js-runtimes for sig solving
+    const clientDefs: Array<{ arg: string; supportsCookies: boolean }> = [
+      { arg: '',                                                           supportsCookies: true  },
+      { arg: '--extractor-args "youtube:player_client=ios"',              supportsCookies: true  },
+      { arg: '--extractor-args "youtube:player_client=mweb"',             supportsCookies: true  },
+      { arg: '--extractor-args "youtube:player_client=android"',          supportsCookies: false },
+      { arg: '--extractor-args "youtube:player_client=tv,android"',       supportsCookies: false },
+      { arg: '--extractor-args "youtube:player_client=android,ios,mweb"', supportsCookies: false },
     ];
 
-    const buildArgs = (clientArg: string, useProxy: boolean): string[] => {
+    const buildArgs = (clientArg: string, useProxy: boolean, useCookies: boolean): string[] => {
       const ffmpegLocFlag = getFFmpegLocationFlag(ffmpegBin);
       const args: string[] = [
         `"${ytDlpBin}"`,
         ...(ffmpegLocFlag ? [ffmpegLocFlag] : []),
+        `--js-runtimes "node:${NODE_BIN}"`,
         '--no-check-certificate',
         '--no-playlist',
       ];
@@ -128,7 +129,6 @@ export class YouTubeDownloaderService {
       if (useProxy && proxy) {
         args.push(`--proxy "${proxy}"`);
       } else if (proxy) {
-        // Explicitly disable proxy (override any system proxy)
         args.push('--proxy ""');
       }
 
@@ -149,8 +149,7 @@ export class YouTubeDownloaderService {
       }
 
       if (isTrimmed) args.push('--force-keyframes-at-cuts');
-
-      if (cookiesFile) args.push(`--cookies "${cookiesFile}"`);
+      if (useCookies && cookiesFile) args.push(`--cookies "${cookiesFile}"`);
 
       args.push('-o', `"${rawTarget}"`, `"${url}"`);
       return args;
@@ -159,19 +158,20 @@ export class YouTubeDownloaderService {
     if (onProgress) onProgress('⬇️ Downloading high-resolution clip stream...', 30);
 
     // Interleave proxy/no-proxy for each client strategy
-    const downloadStrategies: Array<{ clientArg: string; useProxy: boolean }> = [];
-    for (const clientArg of clientStrategies) {
-      if (proxy) downloadStrategies.push({ clientArg, useProxy: true });
-      downloadStrategies.push({ clientArg, useProxy: false });
+    const downloadStrategies: Array<{ clientArg: string; useProxy: boolean; useCookies: boolean }> = [];
+    for (const { arg, supportsCookies } of clientDefs) {
+      const canUseCookies = supportsCookies && Boolean(cookiesFile);
+      if (proxy) downloadStrategies.push({ clientArg: arg, useProxy: true,  useCookies: canUseCookies });
+               downloadStrategies.push({ clientArg: arg, useProxy: false, useCookies: canUseCookies });
     }
 
     let lastDownloadErr: any;
     let downloaded = false;
 
     for (let attempt = 0; attempt < downloadStrategies.length; attempt++) {
-      const { clientArg, useProxy } = downloadStrategies[attempt];
-      const args = buildArgs(clientArg, useProxy);
-      console.log(`[YouTube Downloader] Strategy ${attempt + 1}/${downloadStrategies.length} (client=${clientArg || 'default'}, proxy=${useProxy})`);
+      const { clientArg, useProxy, useCookies } = downloadStrategies[attempt];
+      const args = buildArgs(clientArg, useProxy, useCookies);
+      console.log(`[YouTube Downloader] Strategy ${attempt + 1}/${downloadStrategies.length} (client=${clientArg || 'default'}, proxy=${useProxy}, cookies=${useCookies})`);
 
       try {
         await execAsync(args.join(' '), { maxBuffer: 500 * 1024 * 1024, timeout: 30 * 60 * 1000 });

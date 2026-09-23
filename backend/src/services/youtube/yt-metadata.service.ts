@@ -5,10 +5,10 @@ import { getYoutubeCookieArg } from '../../utils/cookie-resolver.util.js';
 
 const execAsync = promisify(exec);
 
-/**
- * Returns proxy flags from YTDLP_PROXY env var.
- * Returns both a proxy version and a no-proxy version so strategies can alternate.
- */
+// Use the same Node binary that runs this server — guarantees yt-dlp can find it for JS challenge solving.
+// process.execPath = e.g. /usr/local/bin/node on Render
+const NODE_BIN = process.execPath;
+
 function getProxyFlag(): string {
   const proxy = process.env.YTDLP_PROXY?.trim();
   return proxy ? `--proxy "${proxy}"` : '';
@@ -19,39 +19,39 @@ function getPoTokenFlag(): string {
   return poToken ? `--extractor-args "youtube:po_token=web+${poToken}"` : '';
 }
 
+interface Strategy {
+  clientArg: string;
+  useProxy: boolean;
+  useCookies: boolean; // android client rejects --cookies flag
+}
+
 export class YouTubeMetadataService {
-  /**
-   * Fetches full YouTube video metadata using multiple client/proxy strategies.
-   * Logs the full error message from each failed strategy for diagnosis.
-   */
-  static async getMetadata(url: string, ytDlpBin: string, retries = 2): Promise<any> {
+  static async getMetadata(url: string, ytDlpBin: string): Promise<any> {
     const cookieArg = getYoutubeCookieArg();
     const proxyFlag = getProxyFlag();
     const poTokenFlag = getPoTokenFlag();
+    const hasProxy = Boolean(process.env.YTDLP_PROXY?.trim());
+    const hasCookies = Boolean(cookieArg);
 
-    // Build an ordered set of (clientArg, useProxy) strategy combinations.
-    // Try with proxy first (if available), then without proxy as fallback.
-    // This is critical: datacenter IPs are blocked, but some strategies work
-    // without proxy when cookies are fresh.
-    const clientArgs = [
-      '',                                                                        // default web client
-      '--extractor-args "youtube:player_client=tv_embedded"',                   // TV embedded — bypasses many blocks
-      '--extractor-args "youtube:player_client=android"',                       // Android client
-      '--extractor-args "youtube:player_client=ios"',                           // iOS client
-      '--extractor-args "youtube:player_client=web_creator"',                   // Web Creator (less restricted)
-      '--extractor-args "youtube:player_client=tv,android"',                    // TV + Android combo
-      '--extractor-args "youtube:player_client=tv_embedded,web_embedded"',      // Embedded combo
-      '--extractor-args "youtube:player_client=android,ios,mweb"',              // Mobile combo
-      '--extractor-args "youtube:player_client=visionos,android"',              // visionOS combo
+    // js-runtimes flag: points yt-dlp to the exact Node binary for signature/n-challenge solving
+    const jsRuntimeFlag = `--js-runtimes "node:${NODE_BIN}"`;
+
+    // Clients: android/mweb skip cookies (unsupported), web clients need JS runtime
+    const clientDefs: Array<{ arg: string; supportsCookies: boolean }> = [
+      { arg: '',                                                              supportsCookies: true  }, // default web
+      { arg: '--extractor-args "youtube:player_client=ios"',                 supportsCookies: true  }, // iOS
+      { arg: '--extractor-args "youtube:player_client=mweb"',                supportsCookies: true  }, // mobile web
+      { arg: '--extractor-args "youtube:player_client=android"',             supportsCookies: false }, // android (no cookies)
+      { arg: '--extractor-args "youtube:player_client=tv,android"',          supportsCookies: false }, // TV+android (no cookies)
+      { arg: '--extractor-args "youtube:player_client=android,ios,mweb"',    supportsCookies: false }, // mobile combo
+      { arg: '--extractor-args "youtube:player_client=visionos,android"',    supportsCookies: true  }, // visionOS
     ];
 
-    // Interleave: proxy → no-proxy alternation for each client
-    const strategies: Array<{ clientArg: string; useProxy: boolean }> = [];
-    for (const clientArg of clientArgs) {
-      if (proxyFlag) {
-        strategies.push({ clientArg, useProxy: true });
-      }
-      strategies.push({ clientArg, useProxy: false });
+    // Build strategy list: proxy first, then no-proxy, for each client
+    const strategies: Strategy[] = [];
+    for (const { arg, supportsCookies } of clientDefs) {
+      if (hasProxy) strategies.push({ clientArg: arg, useProxy: true,  useCookies: supportsCookies && hasCookies });
+                   strategies.push({ clientArg: arg, useProxy: false, useCookies: supportsCookies && hasCookies });
     }
 
     const baseFlags = `--no-check-certificate --no-playlist --dump-json`;
@@ -60,11 +60,17 @@ export class YouTubeMetadataService {
     let lowResFallback: any = null;
 
     for (let attempt = 0; attempt < strategies.length; attempt++) {
-      const { clientArg, useProxy } = strategies[attempt];
-      const proxy = useProxy ? proxyFlag : '--proxy ""'; // empty string = no proxy in yt-dlp
-      const flags = [clientArg, poTokenFlag, proxy, cookieArg, baseFlags]
-        .filter(Boolean)
-        .join(' ');
+      const { clientArg, useProxy, useCookies } = strategies[attempt];
+      const proxy = useProxy ? proxyFlag : (hasProxy ? '--proxy ""' : '');
+
+      const flags = [
+        jsRuntimeFlag,
+        clientArg,
+        poTokenFlag,
+        proxy,
+        useCookies ? cookieArg : '',
+        baseFlags,
+      ].filter(Boolean).join(' ');
 
       const cmd = `"${ytDlpBin}" ${flags} "${url}"`;
 
@@ -81,20 +87,13 @@ export class YouTubeMetadataService {
           return parsed;
         }
 
-        if (!lowResFallback && parsed) {
-          lowResFallback = parsed;
-        }
+        if (!lowResFallback && parsed) lowResFallback = parsed;
       } catch (err: any) {
         lastErr = err;
-        // Log FULL error (stderr) for diagnostics — critical for debugging Render bot blocks
         const fullMsg = (err?.stderr || err?.message || String(err)).trim();
-        console.warn(
-          `[YouTube Metadata] Strategy ${attempt + 1} failed (client=${clientArg || 'default'}, proxy=${useProxy}):\n${fullMsg}`
-        );
-
+        console.warn(`[YouTube Metadata] Strategy ${attempt + 1} failed (client=${clientArg || 'default'}, proxy=${useProxy}):\n${fullMsg}`);
         if (attempt < strategies.length - 1) {
           await new Promise((r) => setTimeout(r, 600));
-          continue;
         }
       }
     }
