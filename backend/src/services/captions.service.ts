@@ -12,6 +12,7 @@ import { promisify } from 'util';
 import crypto from 'crypto';
 
 import { resolveYtDlpBinary } from '../utils/binary-resolver.util.js';
+import { getYoutubeCookieArg } from '../utils/cookie-resolver.util.js';
 
 function resolveTempDir(): string {
   const isInsideBackend = process.cwd().endsWith('backend') || process.cwd().endsWith('backend\\') || process.cwd().endsWith('backend/');
@@ -298,7 +299,10 @@ export async function fetchAndTrimCaptions(
   const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
   let baseArgs = '--no-warnings --no-check-certificate --no-playlist --skip-download --ignore-errors --js-runtimes node';
   if (isYouTube) {
-    baseArgs += ' --extractor-args "youtube:player_client=android,web_embedded"';
+    const cookieArg = getYoutubeCookieArg();
+    const proxy = process.env.YTDLP_PROXY?.trim();
+    const proxyArg = proxy ? `--proxy "${proxy}" ` : '';
+    baseArgs += ` ${proxyArg}${cookieArg}--extractor-args "youtube:player_client=android,web_embedded"`;
   } else if (url.includes('instagram.com')) {
     baseArgs += ' --add-header "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"';
   }

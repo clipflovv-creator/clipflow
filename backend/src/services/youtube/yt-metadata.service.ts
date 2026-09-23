@@ -3,40 +3,9 @@ import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 
+import { getYoutubeCookieArg } from '../../utils/cookie-resolver.util.js';
+
 const execAsync = promisify(exec);
-
-function findCookiesFile(): string | null {
-  // Support YOUTUBE_COOKIES or YOUTUBE_COOKIES_BASE64 via environment variable (e.g. on Render)
-  try {
-    const rawEnv = process.env.YOUTUBE_COOKIES || (
-      process.env.YOUTUBE_COOKIES_BASE64
-        ? Buffer.from(process.env.YOUTUBE_COOKIES_BASE64, 'base64').toString('utf8')
-        : ''
-    );
-    if (rawEnv && rawEnv.trim().length > 50) {
-      const target = path.join(process.cwd(), 'cookies.txt');
-      if (!fs.existsSync(target) || fs.statSync(target).size < 50) {
-        fs.writeFileSync(target, rawEnv.trim(), 'utf8');
-      }
-      return target;
-    }
-  } catch (err) {
-    console.warn('[YouTubeMetadataService] Failed to write env cookies to disk:', err);
-  }
-
-  const candidates = [
-    path.join(process.cwd(), 'cookies.txt'),
-    path.join(process.cwd(), 'youtube-cookies.txt'),
-    path.join(process.cwd(), 'backend', 'cookies.txt'),
-    path.join(process.cwd(), '..', 'cookies.txt'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c) && fs.statSync(c).size > 100) {
-      return c;
-    }
-  }
-  return null;
-}
 
 /**
  * Returns extra bypass flags read from environment variables:
@@ -66,15 +35,16 @@ export class YouTubeMetadataService {
    * Set YTDLP_PROXY env var to a residential HTTP/SOCKS5 proxy URL for most reliable results.
    */
   static async getMetadata(url: string, ytDlpBin: string, retries = 2): Promise<any> {
-    const cookiesFile = findCookiesFile();
-    const cookieArg = cookiesFile ? `--cookies "${cookiesFile}" ` : '';
+    const cookieArg = getYoutubeCookieArg();
     const bypassFlags = getBypassFlags();
 
     // Client strategies: Default visionos/web returns full 1080p/720p/480p DASH formats with direct URLs.
-    // Fallback to mobile clients only if cloud datacenter IP blocks the primary visionos extractor.
+    // Fallback to embedded TV / mobile clients if cloud datacenter IP blocks the primary extractor.
     const clientStrategies = [
       '',
       '--extractor-args "youtube:player_client=visionos"',
+      '--extractor-args "youtube:player_client=tv_embedded,web_embedded,android"',
+      '--extractor-args "youtube:player_client=tv,android"',
       '--extractor-args "youtube:player_client=visionos,android"',
       '--extractor-args "youtube:player_client=android,ios,mweb"',
       '--extractor-args "youtube:player_client=android"',

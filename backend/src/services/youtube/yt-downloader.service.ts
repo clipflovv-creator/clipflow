@@ -4,41 +4,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getFFmpegAspectFilter } from '../video-crop.service.js';
 import { getFFmpegLocationFlag } from '../../utils/binary-resolver.util.js';
-
-/**
- * Looks for a YouTube cookies.txt file in common locations relative to the backend binary.
- * The cookies.txt must be in Netscape/Mozilla format (exported via browser extension).
- * Place it at: backend/cookies.txt
- */
-function findCookiesFile(): string | null {
-  try {
-    const rawEnv = process.env.YOUTUBE_COOKIES || (
-      process.env.YOUTUBE_COOKIES_BASE64
-        ? Buffer.from(process.env.YOUTUBE_COOKIES_BASE64, 'base64').toString('utf8')
-        : ''
-    );
-    if (rawEnv && rawEnv.trim().length > 50) {
-      const target = path.join(process.cwd(), 'cookies.txt');
-      if (!fs.existsSync(target) || fs.statSync(target).size < 50) {
-        fs.writeFileSync(target, rawEnv.trim(), 'utf8');
-      }
-      return target;
-    }
-  } catch {}
-
-  const candidates = [
-    path.join(process.cwd(), 'cookies.txt'),
-    path.join(process.cwd(), 'youtube-cookies.txt'),
-    path.join(process.cwd(), 'backend', 'cookies.txt'),
-    path.join(process.cwd(), '..', 'cookies.txt'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c) && fs.statSync(c).size > 100) {
-      return c;
-    }
-  }
-  return null;
-}
+import { getYoutubeCookiesPath } from '../../utils/cookie-resolver.util.js';
 
 function formatSecondsToTime(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
@@ -121,7 +87,7 @@ export class YouTubeDownloaderService {
     const needsCrop = !isAudio && Boolean(filterString);
     const heightLimit = this.parseHeightLimit(quality);
 
-    const cookiesFile = findCookiesFile();
+    const cookiesFile = getYoutubeCookiesPath();
     const rawTarget = needsCrop ? tempRawFile : finalFile;
 
     // Clean up any stale files from previous attempts
@@ -140,7 +106,7 @@ export class YouTubeDownloaderService {
         `"${ytDlpBin}"`,
         ...(ffmpegLocFlag ? [ffmpegLocFlag] : []),
         '--js-runtimes node',
-        '--extractor-args "youtube:player_client=android,ios,mweb"',
+        '--extractor-args "youtube:player_client=tv_embedded,web_embedded,android,ios,mweb"',
       ];
 
       // Proxy bypass for datacenter IP blocks (set YTDLP_PROXY env var on Render)

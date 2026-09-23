@@ -8,6 +8,8 @@ import { InstagramMetadataService } from './instagram/index.js';
 import { TwitchMetadataService } from './twitch/index.js';
 import { resolveYtDlpBinary } from '../utils/binary-resolver.util.js';
 
+import { getYoutubeCookieArg } from '../utils/cookie-resolver.util.js';
+
 const execAsync = promisify(exec);
 const YTDLP_BIN = resolveYtDlpBinary();
 
@@ -43,7 +45,10 @@ export class YtDlpService {
       }
 
       // 5. Generic Extractor Fallback
-      const flags = '--js-runtimes node --no-warnings --no-check-certificate --dump-json';
+      const cookieArg = getYoutubeCookieArg();
+      const proxy = process.env.YTDLP_PROXY?.trim();
+      const proxyArg = proxy ? `--proxy "${proxy}" ` : '';
+      const flags = `--js-runtimes node ${proxyArg}${cookieArg}--no-warnings --no-check-certificate --dump-json`;
       const { stdout } = await execAsync(`"${YTDLP_BIN}" ${flags} "${url}"`, {
         maxBuffer: 1024 * 1024 * 50,
       });

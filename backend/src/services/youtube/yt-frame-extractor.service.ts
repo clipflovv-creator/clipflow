@@ -4,21 +4,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
 import { scheduleCleanup } from '../ffmpeg.service.js';
-
-function findCookiesFile(): string | null {
-  const candidates = [
-    path.join(process.cwd(), 'cookies.txt'),
-    path.join(process.cwd(), 'youtube-cookies.txt'),
-    path.join(process.cwd(), 'backend', 'cookies.txt'),
-    path.join(process.cwd(), '..', 'cookies.txt'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c) && fs.statSync(c).size > 100) {
-      return c;
-    }
-  }
-  return null;
-}
+import { getYoutubeCookiesPath } from '../../utils/cookie-resolver.util.js';
 
 const execAsync = promisify(exec);
 
@@ -135,12 +121,14 @@ export class YouTubeFrameExtractorService {
     const tempSeg = path.join(cacheDir, `seg_${hash}.mp4`);
     const startSec = Math.max(0, timestamp - 0.3);
     const endSec = timestamp + 1.5;
-    const cookiesFile = findCookiesFile();
+    const cookiesFile = getYoutubeCookiesPath();
+    const proxy = process.env.YTDLP_PROXY?.trim();
     const buildFrameCmd = (useCookies: boolean) => [
       `"${ytDlpBin}"`,
       `--ffmpeg-location "${path.dirname(ffmpegBin)}"`,
       '--no-warnings',
       '--no-check-certificate',
+      proxy ? `--proxy "${proxy}"` : '',
       useCookies && cookiesFile ? `--cookies "${cookiesFile}"` : '',
       '--no-playlist',
       `--download-sections "*${startSec}-${endSec}"`,
