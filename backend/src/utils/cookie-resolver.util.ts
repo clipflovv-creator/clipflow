@@ -15,6 +15,9 @@ let hasLoggedStatus = false;
  */
 export function getYoutubeCookiesPath(): string | null {
   // 1. Check Render Secret Files first (/etc/secrets/...)
+  // IMPORTANT: /etc/secrets/ is a READ-ONLY filesystem on Render.
+  // yt-dlp writes updated cookies back to the file after each request → OSError crash.
+  // Fix: copy to /tmp (writable) and return that path instead.
   const renderSecrets = [
     '/etc/secrets/cookies.txt',
     '/etc/secrets/youtube-cookies.txt',
@@ -22,11 +25,23 @@ export function getYoutubeCookiesPath(): string | null {
   ];
   for (const secretPath of renderSecrets) {
     if (fs.existsSync(secretPath) && fs.statSync(secretPath).size > 50) {
-      if (!hasLoggedStatus) {
-        console.log(`[YouTube Cookies] ✅ Found Render Secret File: ${secretPath}`);
-        hasLoggedStatus = true;
+      const tmpTarget = path.join(os.tmpdir(), 'clipflow_yt_cookies.txt');
+      try {
+        fs.copyFileSync(secretPath, tmpTarget);
+        fs.chmodSync(tmpTarget, 0o600);
+        if (!hasLoggedStatus) {
+          console.log(`[YouTube Cookies] ✅ Copied Render Secret File to writable tmp: ${tmpTarget}`);
+          hasLoggedStatus = true;
+        }
+        return tmpTarget;
+      } catch (copyErr) {
+        console.warn('[YouTube Cookies] Failed to copy secret file to tmp, using original path:', copyErr);
+        if (!hasLoggedStatus) {
+          console.log(`[YouTube Cookies] ✅ Found Render Secret File: ${secretPath}`);
+          hasLoggedStatus = true;
+        }
+        return secretPath;
       }
-      return secretPath;
     }
   }
 
