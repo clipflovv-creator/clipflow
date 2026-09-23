@@ -84,7 +84,9 @@ class EmailService {
     html: string;
     text?: string;
   }): Promise<boolean> {
+    this.ensureClients();
     const { to, subject, html, text } = params;
+    const emailFrom = this.getEmailFrom();
 
     // A. Attempt Resend API
     if (this.resend) {
@@ -140,6 +142,7 @@ class EmailService {
     rawToken?: string,
     name?: string
   ): Promise<boolean> {
+    const frontendUrl = this.getFrontendUrl();
     const verificationUrl = rawToken
       ? `${frontendUrl}/verify-email?token=${encodeURIComponent(rawToken)}`
       : `${frontendUrl}/verify-email?code=${encodeURIComponent(otpCode)}`;
@@ -161,12 +164,12 @@ class EmailService {
       otpCode,
       rawToken,
       name,
-      frontendUrl: FRONTEND_URL,
+      frontendUrl,
     });
 
     return await this.deliverEmail({
       to: email,
-      subject: `Verify your email address - ClipFlow`,
+      subject: `Verify your ClipFlow account`,
       html,
       text,
     });
@@ -180,6 +183,7 @@ class EmailService {
     otpCode: string,
     rawToken?: string
   ): Promise<boolean> {
+    const frontendUrl = this.getFrontendUrl();
     const resetUrl = rawToken
       ? `${frontendUrl}/reset-password?token=${encodeURIComponent(rawToken)}`
       : `${frontendUrl}/reset-password?code=${encodeURIComponent(otpCode)}`;
@@ -199,12 +203,12 @@ class EmailService {
     const text = getPasswordResetEmailText({
       otpCode,
       rawToken,
-      frontendUrl: FRONTEND_URL,
+      frontendUrl,
     });
 
     return await this.deliverEmail({
       to: email,
-      subject: `Reset your password - ClipFlow`,
+      subject: `Reset your ClipFlow password`,
       html,
       text,
     });
@@ -214,6 +218,8 @@ class EmailService {
    * Sends a clean welcome email to new users.
    */
   public async sendWelcomeEmail(email: string, name?: string): Promise<boolean> {
+    const frontendUrl = this.getFrontendUrl();
+
     console.log('\n================== WELCOME EMAIL ==================');
     console.log(`To: ${email} (Name: ${name || 'User'})`);
     console.log('===================================================\n');
@@ -227,12 +233,12 @@ class EmailService {
     const text = getWelcomeEmailText({
       name,
       email,
-      frontendUrl: FRONTEND_URL,
+      frontendUrl,
     });
 
     return await this.deliverEmail({
       to: email,
-      subject: `Welcome to ClipFlow Studio`,
+      subject: `Welcome to ClipFlow from Cliy`,
       html,
       text,
     });

@@ -1,7 +1,7 @@
 /**
- * Premium responsive HTML and Plain-Text email templates for ClipFlow.
- * Designed with modern dark theme, high-contrast typography, gradient accents,
- * and high deliverability across email providers (Gmail, Apple Mail, Outlook).
+ * Clean, modern, responsive email templates for ClipFlow (by Cliy).
+ * Designed with a minimal SaaS visual hierarchy, strong typography,
+ * subtle purple accents, and high deliverability across all email clients.
  */
 
 interface BaseLayoutOptions {
@@ -11,8 +11,8 @@ interface BaseLayoutOptions {
 }
 
 /**
- * Universal HTML Email Wrapper with MSO & WebKit support.
- * Clean, modern light-neutral container with high deliverability score.
+ * Shared minimal email layout matching modern SaaS design standards.
+ * Clean white single-column container, generous whitespace, subtle header & footer.
  */
 function emailLayout({ title, preheader, content }: BaseLayoutOptions): string {
   const previewText = preheader
@@ -48,7 +48,7 @@ function emailLayout({ title, preheader, content }: BaseLayoutOptions): string {
       padding: 0 !important;
       -webkit-text-size-adjust: 100% !important;
       -ms-text-size-adjust: 100% !important;
-      background-color: #f8fafc !important;
+      background-color: #ffffff !important;
     }
     table, td {
       border-collapse: collapse !important;
@@ -70,59 +70,66 @@ function emailLayout({ title, preheader, content }: BaseLayoutOptions): string {
         max-width: 100% !important;
       }
       .content-padding {
-        padding: 28px 20px !important;
+        padding: 32px 20px !important;
       }
-      .otp-code {
-        font-size: 28px !important;
-        letter-spacing: 5px !important;
+      .otp-digit {
+        width: 36px !important;
+        height: 46px !important;
+        font-size: 22px !important;
       }
     }
   </style>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; -webkit-font-smoothing: antialiased;">
+<body style="margin: 0; padding: 0; background-color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; -webkit-font-smoothing: antialiased;">
   ${previewText}
-  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; min-height: 100vh;">
+  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; min-height: 100vh;">
     <tr>
-      <td align="center" style="padding: 48px 16px;">
+      <td align="center" style="padding: 40px 16px 60px 16px;">
         
-        <!-- Main Card Container -->
-        <table role="presentation" class="email-container" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 560px; background-color: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);">
+        <!-- Main Single Column Card Container -->
+        <table role="presentation" class="email-container" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 540px; background-color: #ffffff;">
           
-          <!-- Top Header Brand Bar -->
+          <!-- Minimal Brand Header -->
           <tr>
-            <td style="padding: 28px 36px 20px 36px; border-bottom: 1px solid #f1f5f9;">
-              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+            <td style="padding: 0 0 32px 0;">
+              <table role="presentation" border="0" cellspacing="0" cellpadding="0">
                 <tr>
-                  <td>
-                    <span style="font-size: 15px; font-weight: 700; letter-spacing: 0.5px; color: #0f172a;">CLIPFLOW</span>
+                  <td valign="middle" style="padding-right: 10px;">
+                    <div style="width: 30px; height: 30px; background: linear-gradient(135deg, #7c3aed, #6366f1); border-radius: 8px; text-align: center; line-height: 30px;">
+                      <span style="color: #ffffff; font-size: 15px; font-weight: 800; font-family: -apple-system, BlinkMacSystemFont, sans-serif;">C</span>
+                    </div>
                   </td>
-                  <td align="right">
-                    <span style="font-size: 11px; font-weight: 600; color: #64748b; letter-spacing: 0.5px; text-transform: uppercase;">Workspace</span>
+                  <td valign="middle">
+                    <span style="font-size: 16px; font-weight: 700; color: #0f172a; letter-spacing: -0.2px;">ClipFlow</span>
+                    <span style="font-size: 12px; font-weight: 500; color: #64748b; margin-left: 6px;">by Cliy</span>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
 
-          <!-- Body Content Slot -->
+          <!-- Main Content Slot -->
           <tr>
-            <td class="content-padding" style="padding: 36px 36px 32px 36px;">
+            <td style="font-size: 15px; line-height: 1.65; color: #334155;">
               ${content}
             </td>
           </tr>
 
-          <!-- Footer -->
+          <!-- Minimal Footer -->
           <tr>
-            <td style="padding: 24px 36px 32px 36px; background-color: #0b0c13; border-top: 1px solid #1c1e2d; text-align: center;">
-              <p style="margin: 0 0 8px 0; font-size: 11px; color: #64748b; line-height: 1.5;">
-                This email was sent by <strong>ClipFlow</strong> &bull; AI Video Studio & Content Repurposing Engine.
-              </p>
-              <p style="margin: 0; font-size: 11px; color: #475569;">
-                If you did not request this, you can safely ignore this email.
-              </p>
-              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-                ClipFlow Technologies Inc. &bull; All rights reserved.
-              </p>
+            <td style="padding: 40px 0 0 0; border-top: 1px solid #f1f5f9; margin-top: 36px;">
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="font-size: 12px; line-height: 1.5; color: #94a3b8;">
+                    <p style="margin: 0 0 4px 0;">
+                      ClipFlow is a product by Cliy.
+                    </p>
+                    <p style="margin: 0;">
+                      &copy; ${new Date().getFullYear()} Cliy. All rights reserved.
+                    </p>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
 
@@ -136,7 +143,7 @@ function emailLayout({ title, preheader, content }: BaseLayoutOptions): string {
 }
 
 /**
- * 1. Verification OTP Email Template
+ * 1. Verification / OTP Email Template
  */
 export function getVerificationEmailHtml(params: {
   otpCode: string;
@@ -150,51 +157,55 @@ export function getVerificationEmailHtml(params: {
     : `${frontendUrl}/verify-email?code=${encodeURIComponent(otpCode)}`;
 
   const recipientGreeting = name && name.trim() ? `Hi ${escapeHtml(name.trim())},` : 'Hello,';
+  const digits = otpCode.split('');
 
   const body = `
-    <h1 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600; color: #0f172a; letter-spacing: -0.02em; line-height: 1.3;">
-      Confirm your email address
-    </h1>
-    <p style="margin: 0 0 20px 0; font-size: 14px; color: #475569; line-height: 1.6;">
+    <p style="margin: 0 0 20px 0; font-size: 15px; color: #1e293b; font-weight: 500;">
       ${recipientGreeting}
     </p>
-    <p style="margin: 0 0 28px 0; font-size: 14px; color: #475569; line-height: 1.6;">
-      Please use the following verification code to confirm your email address and access your ClipFlow workspace.
+
+    <p style="margin: 0 0 20px 0; font-size: 15px; color: #334155; line-height: 1.6;">
+      This is your verification code:
     </p>
 
-    <!-- OTP Display Box -->
-    <div style="background-color: #090a10; border: 1px solid #312e81; border-radius: 14px; padding: 24px; text-align: center; margin: 26px 0; box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);">
-      <p style="margin: 0 0 8px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #a855f7;">
-        Your 6-Digit Verification Code
-      </p>
-      <div style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #ffffff; text-shadow: 0 0 18px rgba(168, 85, 247, 0.45); padding: 4px 0;">
-        ${otpCode}
-      </div>
-      <p style="margin: 10px 0 0 0; font-size: 12px; color: #64748b;">
-        Valid for <strong>24 hours</strong>. Do not share this code.
-      </p>
-    </div>
+    <!-- Prominent OTP Area (Style matching reference otp.webp) -->
+    <table role="presentation" border="0" cellspacing="8" cellpadding="0" style="margin: 24px 0;">
+      <tr>
+        ${digits
+          .map(
+            (d) => `
+          <td class="otp-digit" width="44" height="54" align="center" valign="middle" style="width: 44px; height: 54px; background-color: #faf5ff; border: 1.5px solid #a855f7; border-radius: 10px; font-size: 26px; font-weight: 700; color: #7c3aed; font-family: -apple-system, BlinkMacSystemFont, monospace; text-align: center;">
+            ${escapeHtml(d)}
+          </td>`
+          )
+          .join('')}
+      </tr>
+    </table>
 
-    <!-- Direct 1-Click Verification Button -->
-    <div style="text-align: center; margin: 28px 0;">
-      <a href="${verificationUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #9333ea, #6366f1); color: #ffffff; padding: 13px 32px; border-radius: 10px; font-size: 13px; font-weight: 700; text-decoration: none; letter-spacing: 0.3px; box-shadow: 0 6px 20px -3px rgba(147, 51, 234, 0.5);">
-        Verify Email Address &rarr;
+    <p style="margin: 24px 0 20px 0; font-size: 14px; color: #475569; line-height: 1.6;">
+      This code will only be valid for the next <strong>24 hours</strong>. If the code does not work, you can use this login verification link:
+    </p>
+
+    <!-- Primary CTA Button -->
+    <div style="margin: 24px 0 32px 0;">
+      <a href="${verificationUrl}" target="_blank" style="display: inline-block; background-color: #7c3aed; color: #ffffff; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+        Verify email
       </a>
     </div>
 
-    <div style="border-top: 1px solid #f1f5f9; padding-top: 20px; margin-top: 28px;">
-      <p style="margin: 0 0 6px 0; font-size: 12px; color: #64748b; line-height: 1.5;">
-        Alternatively, copy and paste this verification URL into your browser:
-      </p>
-      <a href="${verificationUrl}" target="_blank" style="font-size: 12px; color: #475569; word-break: break-all; text-decoration: underline;">
-        ${verificationUrl}
-      </a>
-    </div>
+    <p style="margin: 0 0 24px 0; font-size: 13px; color: #64748b; line-height: 1.5;">
+      If you did not request this code, you can safely ignore this email.
+    </p>
+
+    <p style="margin: 0; font-size: 14px; color: #334155; line-height: 1.5;">
+      Thanks,<br>
+      <strong style="color: #0f172a;">The Cliy Team</strong>
+    </p>
   `;
 
   return emailLayout({
-    title: 'Confirm your email address - ClipFlow',
-    preheader: `Your verification code is ${otpCode}. Valid for 24 hours.`,
+    title: 'Verify your ClipFlow account',
+    preheader: 'Your ClipFlow verification code is ready.',
     content: body,
   });
 }
@@ -209,76 +220,90 @@ export function getVerificationEmailText(params: {
   const verificationUrl = rawToken
     ? `${frontendUrl}/verify-email?token=${encodeURIComponent(rawToken)}`
     : `${frontendUrl}/verify-email?code=${encodeURIComponent(otpCode)}`;
-  const greeting = name ? `Hey ${name},` : 'Hello,';
+  const greeting = name && name.trim() ? `Hi ${name.trim()},` : 'Hello,';
 
   return `${greeting}
 
-Welcome to ClipFlow!
+This is your verification code:
 
-Your 6-Digit Verification Code is: ${otpCode}
+${otpCode}
 
-Enter this code in your browser or visit this link to verify your email:
+This code will only be valid for the next 24 hours. If the code does not work, you can use this login verification link:
 ${verificationUrl}
 
-This code is valid for 24 hours. If you did not request this, you can safely ignore this email.
+If you did not request this code, you can safely ignore this email.
 
-The ClipFlow Team
+Thanks,
+The Cliy Team
+
+ClipFlow is a product by Cliy.
 ${frontendUrl}`;
 }
 
 /**
- * 2. Password Reset OTP Email Template
+ * 2. Password Reset Email Template
  */
 export function getPasswordResetEmailHtml(params: {
   otpCode: string;
   rawToken?: string;
+  name?: string;
   frontendUrl: string;
 }): string {
-  const { otpCode, rawToken, frontendUrl } = params;
+  const { otpCode, rawToken, name, frontendUrl } = params;
   const resetUrl = rawToken
     ? `${frontendUrl}/reset-password?token=${encodeURIComponent(rawToken)}`
     : `${frontendUrl}/reset-password?code=${encodeURIComponent(otpCode)}`;
 
+  const recipientGreeting = name && name.trim() ? `Hi ${escapeHtml(name.trim())},` : 'Hello,';
+  const digits = otpCode.split('');
+
   const body = `
-    <div style="text-align: center; margin-bottom: 24px;">
-      <h1 style="margin: 0 0 10px 0; font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">
-        Password Reset Request
-      </h1>
-      <p style="margin: 0; font-size: 14px; color: #94a3b8; line-height: 1.6;">
-        We received a request to reset your password for ClipFlow. Use the 6-digit code below to set a new password.
-      </p>
-    </div>
+    <p style="margin: 0 0 20px 0; font-size: 15px; color: #1e293b; font-weight: 500;">
+      ${recipientGreeting}
+    </p>
 
-    <!-- OTP Display Box -->
-    <div style="background-color: #090a10; border: 1px solid #431407; border-radius: 14px; padding: 24px; text-align: center; margin: 26px 0; box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);">
-      <p style="margin: 0 0 8px 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: #f97316;">
-        6-Digit Reset Code
-      </p>
-      <div style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #ffffff; text-shadow: 0 0 18px rgba(249, 115, 22, 0.45); padding: 4px 0;">
-        ${otpCode}
-      </div>
-      <p style="margin: 10px 0 0 0; font-size: 12px; color: #64748b;">
-        Valid for <strong>60 minutes</strong>.
-      </p>
-    </div>
+    <p style="margin: 0 0 20px 0; font-size: 15px; color: #334155; line-height: 1.6;">
+      We received a request to reset your ClipFlow password. Your reset code is:
+    </p>
 
-    <!-- Reset Password CTA -->
-    <div style="text-align: center; margin: 28px 0;">
-      <a href="${resetUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #f97316, #ef4444); color: #ffffff; padding: 13px 32px; border-radius: 10px; font-size: 13px; font-weight: 700; text-decoration: none; letter-spacing: 0.3px; box-shadow: 0 6px 20px -3px rgba(239, 68, 68, 0.45);">
-        Choose New Password &rarr;
+    <!-- Prominent OTP Area (Style matching reference passReset.webp / otp.webp) -->
+    <table role="presentation" border="0" cellspacing="8" cellpadding="0" style="margin: 24px 0;">
+      <tr>
+        ${digits
+          .map(
+            (d) => `
+          <td class="otp-digit" width="44" height="54" align="center" valign="middle" style="width: 44px; height: 54px; background-color: #faf5ff; border: 1.5px solid #a855f7; border-radius: 10px; font-size: 26px; font-weight: 700; color: #7c3aed; font-family: -apple-system, BlinkMacSystemFont, monospace; text-align: center;">
+            ${escapeHtml(d)}
+          </td>`
+          )
+          .join('')}
+      </tr>
+    </table>
+
+    <p style="margin: 24px 0 20px 0; font-size: 14px; color: #475569; line-height: 1.6;">
+      This code will only be valid for the next <strong>60 minutes</strong>. You can also reset your password directly using this link:
+    </p>
+
+    <!-- Primary CTA Button -->
+    <div style="margin: 24px 0 32px 0;">
+      <a href="${resetUrl}" target="_blank" style="display: inline-block; background-color: #7c3aed; color: #ffffff; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+        Reset password
       </a>
     </div>
 
-    <div style="border-top: 1px solid #f1f5f9; padding-top: 20px; margin-top: 28px;">
-      <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
-        If you did not initiate this request, no action is required and your account remains secure.
-      </p>
-    </div>
+    <p style="margin: 0 0 24px 0; font-size: 13px; color: #64748b; line-height: 1.5;">
+      If you did not request a password reset, you can safely ignore this email. Your password will not be changed unless the reset process is completed.
+    </p>
+
+    <p style="margin: 0; font-size: 14px; color: #334155; line-height: 1.5;">
+      Thanks,<br>
+      <strong style="color: #0f172a;">The Cliy Team</strong>
+    </p>
   `;
 
   return emailLayout({
-    title: 'Reset your password - ClipFlow',
-    preheader: `Your reset code is ${otpCode}. Valid for 60 minutes.`,
+    title: 'Reset your ClipFlow password',
+    preheader: 'Your ClipFlow password reset code is ready.',
     content: body,
   });
 }
@@ -286,30 +311,37 @@ export function getPasswordResetEmailHtml(params: {
 export function getPasswordResetEmailText(params: {
   otpCode: string;
   rawToken?: string;
+  name?: string;
   frontendUrl: string;
 }): string {
-  const { otpCode, rawToken, frontendUrl } = params;
+  const { otpCode, rawToken, name, frontendUrl } = params;
   const resetUrl = rawToken
     ? `${frontendUrl}/reset-password?token=${encodeURIComponent(rawToken)}`
     : `${frontendUrl}/reset-password?code=${encodeURIComponent(otpCode)}`;
+  const greeting = name && name.trim() ? `Hi ${name.trim()},` : 'Hello,';
 
-  return `ClipFlow Password Reset
+  return `${greeting}
 
-We received a request to reset your password.
+We received a request to reset your ClipFlow password.
 
-Your 6-Digit Reset Code is: ${otpCode}
+Your reset code is:
 
-Or reset your password directly using this link:
+${otpCode}
+
+This code will only be valid for the next 60 minutes. You can also reset your password directly using this link:
 ${resetUrl}
 
-This code is valid for 60 minutes. If you did not request this, please ignore this email.
+If you did not request a password reset, you can safely ignore this email. Your password will not be changed unless the reset process is completed.
 
-The ClipFlow Team
+Thanks,
+The Cliy Team
+
+ClipFlow is a product by Cliy.
 ${frontendUrl}`;
 }
 
 /**
- * 3. Minimalist Executive Welcome Email Template
+ * 3. Welcome Email Template
  */
 export function getWelcomeEmailHtml(params: {
   name?: string;
@@ -318,90 +350,54 @@ export function getWelcomeEmailHtml(params: {
 }): string {
   const { name, frontendUrl } = params;
   const recipientGreeting = name && name.trim() ? `Hi ${escapeHtml(name.trim())},` : 'Hello,';
-  const studioUrl = `${frontendUrl}/editor/storage`;
 
   const body = `
-    <!-- Hero Banner -->
-    <div style="text-align: center; margin-bottom: 28px;">
-      <div style="display: inline-block; background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(56, 189, 248, 0.2)); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 12px; padding: 10px 18px; margin-bottom: 14px;">
-        <span style="font-size: 13px; font-weight: 700; color: #c084fc; text-transform: uppercase; letter-spacing: 1px;">Account Verified &amp; Active</span>
-      </div>
-      <h1 style="margin: 0 0 10px 0; font-size: 24px; font-weight: 800; color: #ffffff; letter-spacing: -0.4px;">
-        ${greeting}
-      </h1>
-      <p style="margin: 0; font-size: 14px; color: #cbd5e1; line-height: 1.6;">
-        Thank you for joining <strong>ClipFlow</strong>. Your email is verified and your studio workspace is ready to export high-performance video clips.
-      </p>
-    </div>
+    <p style="margin: 0 0 18px 0; font-size: 15px; color: #1e293b; font-weight: 500;">
+      ${recipientGreeting}
+    </p>
 
-    <!-- Product Highlights Section -->
-    <div style="margin: 28px 0;">
-      <p style="margin: 0 0 16px 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #a855f7; text-align: center;">
-        What You Can Do With ClipFlow
-      </p>
+    <p style="margin: 0 0 16px 0; font-size: 15px; color: #334155; line-height: 1.65;">
+      Welcome to ClipFlow. Thank you for joining us.
+    </p>
 
-      <!-- Grid Cards -->
-      <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
-        <tr>
-          <td style="padding-bottom: 12px;">
-            <div style="background-color: #0b0c14; border: 1px solid #1f2337; border-radius: 12px; padding: 14px 16px;">
-              <div style="font-size: 13px; font-weight: 700; color: #ffffff; margin-bottom: 3px;">
-                Smart Ratios &amp; Crop Framing
-              </div>
-              <div style="font-size: 12px; color: #94a3b8; line-height: 1.4;">
-                Transform videos into 9:16 Shorts/Reels, 1:1 Square, and 4:5 Portrait with interactive live crop and fit modes.
-              </div>
-            </div>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-bottom: 12px;">
-            <div style="background-color: #0b0c14; border: 1px solid #1f2337; border-radius: 12px; padding: 14px 16px;">
-              <div style="font-size: 13px; font-weight: 700; color: #ffffff; margin-bottom: 3px;">
-                Multi-Platform Repurposing
-              </div>
-              <div style="font-size: 12px; color: #94a3b8; line-height: 1.4;">
-                Clip directly from YouTube, Twitch VODs/streams, Instagram reels, and X videos with instant audio/video extraction.
-              </div>
-            </div>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-bottom: 12px;">
-            <div style="background-color: #0b0c14; border: 1px solid #1f2337; border-radius: 12px; padding: 14px 16px;">
-              <div style="font-size: 13px; font-weight: 700; color: #ffffff; margin-bottom: 3px;">
-                AI Subtitles &amp; Captions
-              </div>
-              <div style="font-size: 12px; color: #94a3b8; line-height: 1.4;">
-                Generate synchronized subtitles and export in SRT, VTT, or plain text formats in multiple languages.
-              </div>
-            </div>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-bottom: 4px;">
-            <div style="background-color: #0b0c14; border: 1px solid #1f2337; border-radius: 12px; padding: 14px 16px;">
-              <div style="font-size: 13px; font-weight: 700; color: #ffffff; margin-bottom: 3px;">
-                Cloud Storage &amp; Companion Engine
-              </div>
-              <div style="font-size: 12px; color: #94a3b8; line-height: 1.4;">
-                Direct Google Drive integration and ultra-fast local hardware acceleration companion for unlimited exports.
-              </div>
-            </div>
-          </td>
-        </tr>
-      </table>
-    </div>
+    <p style="margin: 0 0 20px 0; font-size: 15px; color: #334155; line-height: 1.65;">
+      ClipFlow is part of Cliy, where we build and deliver video editing and content creation tools for creators around the world.
+    </p>
 
-    <!-- CTA Button -->
-    <div style="text-align: center; margin: 32px 0 16px 0;">
-      <a href="${frontendUrl}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #9333ea, #6366f1); color: #ffffff; padding: 14px 36px; border-radius: 12px; font-size: 14px; font-weight: 800; text-decoration: none; letter-spacing: 0.3px; box-shadow: 0 8px 25px -4px rgba(147, 51, 234, 0.55);">
-        Launch ClipFlow Studio &rarr;
+    <p style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">
+      What you can do with ClipFlow
+    </p>
+
+    <ul style="margin: 0 0 28px 0; padding-left: 20px; font-size: 14px; color: #475569; line-height: 1.7;">
+      <li style="margin-bottom: 6px;"><strong>Video trimming &amp; clipping:</strong> Fast precision clipping from long-form content.</li>
+      <li style="margin-bottom: 6px;"><strong>Smart aspect ratios:</strong> Instant 9:16 Shorts/Reels, 1:1 Square, and 4:5 Portrait framing.</li>
+      <li style="margin-bottom: 6px;"><strong>Captions &amp; subtitles:</strong> Synchronized subtitles in SRT, VTT, and plain text.</li>
+      <li style="margin-bottom: 6px;"><strong>Multi-platform workflows:</strong> Extract and repurpose from YouTube, Twitch, Instagram, and X.</li>
+      <li style="margin-bottom: 6px;"><strong>Cloud &amp; local companion:</strong> Direct Google Drive integration and local hardware acceleration.</li>
+    </ul>
+
+    <!-- Primary CTA Button (Style matching reference welcome.webp) -->
+    <div style="margin: 28px 0 32px 0;">
+      <a href="${frontendUrl}" target="_blank" style="display: inline-block; background-color: #7c3aed; color: #ffffff; padding: 12px 28px; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+        Launch ClipFlow
       </a>
     </div>
+
+    <p style="margin: 0 0 24px 0; font-size: 14px; color: #475569; line-height: 1.65;">
+      We'd love to have you with us as we build the next generation of creator tools.
+    </p>
+
+    <p style="margin: 0; font-size: 14px; color: #334155; line-height: 1.5;">
+      Thanks,<br>
+      <strong style="color: #0f172a;">The Cliy Team</strong>
+    </p>
   `;
 
-  return emailLayout('Welcome to ClipFlow Studio', body);
+  return emailLayout({
+    title: 'Welcome to ClipFlow from Cliy',
+    preheader: "Welcome to ClipFlow. We're excited to have you with us.",
+    content: body,
+  });
 }
 
 export function getWelcomeEmailText(params: {
@@ -410,22 +406,30 @@ export function getWelcomeEmailText(params: {
   frontendUrl: string;
 }): string {
   const { name, frontendUrl } = params;
-  const greeting = name ? `Welcome aboard, ${name}!` : 'Welcome to ClipFlow Studio!';
+  const greeting = name && name.trim() ? `Hi ${name.trim()},` : 'Hello,';
 
   return `${greeting}
 
-Thank you for joining ClipFlow! Your email is verified and your studio workspace is ready.
+Welcome to ClipFlow. Thank you for joining us.
 
-With ClipFlow you can:
-- Smart Ratios & Crop: Transform videos into 9:16 Shorts/Reels, 1:1 Square, 4:5 Portrait.
-- Multi-Platform: Clip from YouTube, Twitch, Instagram, and X with instant extraction.
-- AI Subtitles: Generate synchronized captions in SRT, VTT, or plain text.
-- Cloud Storage: Google Drive sync & local companion acceleration for fast exports.
+ClipFlow is part of Cliy, where we build and deliver video editing and content creation tools for creators around the world.
 
-Launch ClipFlow Studio:
+What you can do with ClipFlow:
+- Video trimming & clipping: Fast precision clipping from long-form content.
+- Smart aspect ratios: Instant 9:16 Shorts/Reels, 1:1 Square, and 4:5 Portrait framing.
+- Captions & subtitles: Synchronized subtitles in SRT, VTT, and plain text.
+- Multi-platform workflows: Extract and repurpose from YouTube, Twitch, Instagram, and X.
+- Cloud & local companion: Direct Google Drive integration and local hardware acceleration.
+
+Launch ClipFlow:
 ${frontendUrl}
 
-The ClipFlow Team
+We'd love to have you with us as we build the next generation of creator tools.
+
+Thanks,
+The Cliy Team
+
+ClipFlow is a product by Cliy.
 ${frontendUrl}`;
 }
 

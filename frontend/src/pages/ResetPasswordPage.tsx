@@ -47,7 +47,7 @@ export default function ResetPasswordPage() {
       } else {
         setSuccessMsg(res.message || 'Password successfully updated! Redirecting...');
         setTimeout(() => {
-          navigate('/storage');
+          navigate('/');
         }, 1500);
       }
     } catch (err: any) {
