@@ -275,7 +275,7 @@ export default function UpgradePage() {
             <Link to="/" className="hover:text-zinc-300 transition-colors">Home</Link>
             <Link to="/editor" className="hover:text-zinc-300 transition-colors">Studio</Link>
             <Link to="/terms" className="hover:text-zinc-300 transition-colors">Terms of Service</Link>
-            <span>© 2026 ClipFlow</span>
+            <span>© 2026 Cliy · ClipFlow</span>
           </div>
         </div>
       </footer>

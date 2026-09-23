@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Scissors,
-  Film,
   Sparkles,
   Sliders,
   User,
@@ -54,7 +53,6 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
   // Determine active nav item from route
   const getActiveNav = () => {
     const path = location.pathname;
-    if (path.includes('/storage')) return 'Cloud';
     if (path.includes('/settings')) return 'Settings';
     return 'Studio';
   };
@@ -84,7 +82,6 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
 
   const NAV_ITEMS = [
     { id: 'Studio', icon: Scissors, label: 'Studio', isSoon: false },
-    { id: 'Cloud', icon: Film, label: 'Cloud Storage', isSoon: false },
     { id: 'AI', icon: Sparkles, label: 'AI Tools', isSoon: true },
     { id: 'Settings', icon: Sliders, label: 'Settings', isSoon: false },
   ];
@@ -108,8 +105,6 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
 
     if (id === 'Studio') {
       navigate(`/editor/studio${search}`);
-    } else if (id === 'Cloud') {
-      navigate(`/editor/storage${search}`);
     } else if (id === 'AI') {
       setAiNotice('Coming Soon! AI Video Assistant & Auto-Highlights are currently under development.');
       setTimeout(() => setAiNotice(null), 4000);
@@ -133,7 +128,7 @@ export const EditorSidebar: React.FC<EditorSidebarProps> = ({
           <img
             src="/logo.ico"
             alt="ClipFlow"
-            className="w-7 h-7 object-contain shrink-0 group-hover:scale-110 transition-transform"
+            className="w-7 h-7 object-contain shrink-0"
           />
           <span className="text-[15px] font-black text-white tracking-tight truncate group-hover:text-blue-400 transition-colors">ClipFlow</span>
         </button>

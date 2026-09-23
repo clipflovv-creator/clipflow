@@ -884,27 +884,187 @@ export default function ClipFlowHome() {
           </div>
         </section>
 
-        {/* ── Section 7: Footer ─────────────────────────────────────── */}
-        <footer className="border-t border-white/[0.06] py-8 px-6 bg-black">
-          <div className="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-2">
-              <img src="/logo.ico" alt="ClipFlow" style={{ width: 22, height: 22, objectFit: 'contain' }} />
-              <span className="text-xs font-bold text-gray-400">ClipFlow</span>
-              <span className="text-xs text-gray-600">— Professional Video Studio</span>
+        {/* ── Section 7: Expanded Footer ─────────────────────────────────────── */}
+        <footer className="border-t border-white/[0.08] pt-12 pb-8 px-6 bg-black text-zinc-400">
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-8 pb-10">
+              {/* Col 1: Brand & About */}
+              <div className="col-span-2 md:col-span-1 space-y-3">
+                <div className="flex items-center gap-2">
+                  <img src="/logo.ico" alt="ClipFlow" className="w-6 h-6 object-contain" />
+                  <span className="text-sm font-bold text-white tracking-tight">ClipFlow</span>
+                  <span className="text-[11px] text-zinc-500 font-medium">by Cliy</span>
+                </div>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  ClipFlow is a product by Cliy, built to make video editing and content creation simpler for creators around the world.
+                </p>
+              </div>
+
+              {/* Col 2: Social / Supported Platforms */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-300">Platforms</h4>
+                <ul className="space-y-2 text-xs">
+                  <li>
+                    <a
+                      href="https://youtube.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 hover:text-white transition-colors"
+                    >
+                      <YoutubeIcon className="w-3.5 h-3.5 text-red-500" />
+                      <span>YouTube</span>
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="https://instagram.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 hover:text-white transition-colors"
+                    >
+                      <InstagramIcon className="w-3.5 h-3.5 text-pink-500" />
+                      <span>Instagram</span>
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="https://twitch.tv"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 hover:text-white transition-colors"
+                    >
+                      <TwitchIcon className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Twitch</span>
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="https://x.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 hover:text-white transition-colors"
+                    >
+                      <TwitterIcon className="w-3.5 h-3.5 text-zinc-400" />
+                      <span>Twitter / X</span>
+                    </a>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Col 3: Editor */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-300">Editor</h4>
+                <ul className="space-y-2 text-xs">
+                  <li>
+                    <Link to="/editor" className="hover:text-white transition-colors">
+                      Studio
+                    </Link>
+                  </li>
+                  <li>
+                    <Link to="/editor/settings" className="hover:text-white transition-colors">
+                      Settings
+                    </Link>
+                  </li>
+                  <li>
+                    <span className="flex items-center gap-1.5 text-zinc-500 cursor-default">
+                      <span>AI Tools</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/10 text-zinc-400 font-bold uppercase tracking-wider">
+                        Soon
+                      </span>
+                    </span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Col 4: Legal */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-300">Legal</h4>
+                <ul className="space-y-2 text-xs">
+                  <li>
+                    <Link to="/terms?tab=terms" className="hover:text-white transition-colors">
+                      Terms &amp; Conditions
+                    </Link>
+                  </li>
+                  <li>
+                    <Link to="/terms?tab=terms" className="hover:text-white transition-colors">
+                      Terms of Service
+                    </Link>
+                  </li>
+                  <li>
+                    <Link to="/privacy" className="hover:text-white transition-colors">
+                      Privacy Policy
+                    </Link>
+                  </li>
+                  <li>
+                    <Link to="/api-terms" className="hover:text-white transition-colors">
+                      API Terms of Use
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Col 5: How to Use (1 word each) */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-300">How to Use</h4>
+                <ul className="space-y-2 text-xs">
+                  <li>
+                    <a
+                      href="#how-to-use"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        document.getElementById('how-to-use')?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="hover:text-white transition-colors"
+                    >
+                      Paste
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="#how-to-use"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        document.getElementById('how-to-use')?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="hover:text-white transition-colors"
+                    >
+                      Trim
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="#how-to-use"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        document.getElementById('how-to-use')?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="hover:text-white transition-colors"
+                    >
+                      Crop
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="#how-to-use"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        document.getElementById('how-to-use')?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="hover:text-white transition-colors"
+                    >
+                      Export
+                    </a>
+                  </li>
+                </ul>
+              </div>
             </div>
-            <div className="flex items-center gap-6 text-xs text-gray-500">
-              <Link to="/editor" className="hover:text-gray-300 transition-colors">
-                Studio
-              </Link>
-              <Link to="/upgrade" className="hover:text-gray-300 transition-colors">
-                Upgrade
-              </Link>
-              <Link to="/terms" className="text-gray-400 hover:text-sky-400 transition-colors">
-                Terms of Service
-              </Link>
-              <span className="text-[11px] text-gray-700">
-                © 2026 ClipFlow. All rights reserved.
-              </span>
+
+            {/* Bottom Bar */}
+            <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
+              <p>© 2026 Cliy · ClipFlow</p>
+              <p className="text-[11px] text-zinc-600">
+                Built for creators and media teams worldwide
+              </p>
             </div>
           </div>
         </footer>
