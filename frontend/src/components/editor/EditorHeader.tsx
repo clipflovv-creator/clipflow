@@ -70,9 +70,9 @@ export function EditorHeader({
 
         {/* Title — grows to fill space */}
         <div className="flex-1 min-w-0">
-          {isLoadingMeta ? (
+          {isLoadingMeta && !metadata?.title ? (
             <div className="w-28 h-3.5 rounded-md yt-skeleton" />
-          ) : metadata ? (
+          ) : metadata?.title ? (
             <p className="text-xs font-semibold text-zinc-200 truncate tracking-tight" title={metadata.title}>
               {metadata.title}
             </p>
@@ -92,14 +92,14 @@ export function EditorHeader({
       {/* ══ DESKTOP APP BAR (>= md) ══ */}
       <header className="hidden md:flex h-[54px] items-center justify-between px-4 border-b border-white/[0.06] bg-black/90 backdrop-blur-xl shrink-0 gap-4">
         <div className="flex items-center gap-3 min-w-0">
-          {isLoadingMeta && (
+          {isLoadingMeta && !metadata?.title && (
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-16 h-5 rounded-md yt-skeleton shrink-0" />
               <div className="w-48 sm:w-72 md:w-96 h-4 rounded-md yt-skeleton shrink-0" />
             </div>
           )}
 
-          {metadata && (
+          {metadata?.title && (
             <div className="flex items-center gap-2 min-w-0">
               {metadata.uploader && (
                 <span

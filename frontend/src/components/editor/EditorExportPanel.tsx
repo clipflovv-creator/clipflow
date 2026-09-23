@@ -219,8 +219,14 @@ export function EditorExportPanel({
             {previewImageMode === 'thumbnail' ? (
               <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-white/10 bg-black shadow-sm flex items-center justify-center group">
                 <img
-                  src={metadata.thumbnail || ''}
+                  src={metadata.thumbnail || (metadata?.id ? `https://img.youtube.com/vi/${metadata.id}/maxresdefault.jpg` : '')}
                   alt="Thumbnail preview"
+                  onError={(e) => {
+                    const ytId = metadata?.id;
+                    if (ytId && !e.currentTarget.src.includes('hqdefault')) {
+                      e.currentTarget.src = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+                    }
+                  }}
                   className="w-full h-full object-cover transition-all duration-300 opacity-100 scale-100"
                 />
               </div>

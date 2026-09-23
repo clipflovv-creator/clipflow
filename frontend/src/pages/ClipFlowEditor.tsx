@@ -241,7 +241,7 @@ export default function ClipFlowEditor() {
     if (metadata.width && metadata.height && metadata.width > 0 && metadata.height > 0) {
       setVideoDimensions({ width: metadata.width, height: metadata.height });
     }
-    if (metadata.title && !customFileName) {
+    if (metadata.title && (!customFileName || customFileName === 'YouTube Video')) {
       setCustomFileName(metadata.title);
     }
     const dur = metadata.duration && metadata.duration > 0 ? metadata.duration : 0;
@@ -1236,13 +1236,13 @@ export default function ClipFlowEditor() {
         {/* Body Row */}
         <div className="flex-1 flex overflow-hidden min-h-0">
           <main className="flex-1 flex flex-col overflow-y-auto min-w-0 p-3 sm:p-4 gap-0 pb-20 md:pb-4">
-            {isLoadingMeta && (
+            {isLoadingMeta && !youtubeId && (
               <EditorPlayerSkeleton
                 videoHeight={videoHeight}
               />
             )}
 
-            {errorMeta && !isLoadingMeta && (
+            {errorMeta && !isLoadingMeta && !youtubeId && (
               <div className="flex-1 flex flex-col items-center justify-center gap-5 text-center p-8 min-h-[480px] bg-black rounded-2xl border border-white/[0.07] shadow-2xl">
                 <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-white/10 flex items-center justify-center shadow-xl">
                   <AlertCircle className="w-8 h-8 text-zinc-400 stroke-[1.5]" />
@@ -1265,7 +1265,7 @@ export default function ClipFlowEditor() {
               </div>
             )}
 
-            {!metadata && !isLoadingMeta && !errorMeta && (
+            {!metadata && !isLoadingMeta && !errorMeta && !youtubeId && (
               <div className="flex-1 flex flex-col items-center justify-center gap-5 text-center p-6 min-h-[350px]">
                 <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
                   <Film className="w-7 h-7 text-blue-400" />
@@ -1283,7 +1283,7 @@ export default function ClipFlowEditor() {
               </div>
             )}
 
-            {metadata && !isLoadingMeta && !errorMeta && (
+            {(metadata || youtubeId) && (!isLoadingMeta || youtubeId) && (!errorMeta || youtubeId) && (
               <>
                 <EditorPlayerStage
                   videoContainerRef={videoContainerRef}
@@ -1377,7 +1377,7 @@ export default function ClipFlowEditor() {
                   currentTime={currentTime}
                   effectiveDuration={effectiveDuration}
                   youtubeId={youtubeId}
-                  thumbnail={metadata?.thumbnail || ''}
+                  thumbnail={metadata?.thumbnail || (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : '')}
                   isSeekingRef={isSeekingRef}
                   pendingSeekTimeRef={pendingSeekTimeRef}
                   lastSeekTimeRef={lastSeekTimeRef}
@@ -1455,7 +1455,7 @@ export default function ClipFlowEditor() {
         onToggleTrim={() => setIsTrimEnabled((prev) => !prev)}
         isDownloading={isDownloading}
         downloadStatus={downloadStatus}
-        hasMetadata={Boolean(metadata && !isLoadingMeta && !errorMeta)}
+        hasMetadata={Boolean((metadata || youtubeId) && (!isLoadingMeta || youtubeId) && (!errorMeta || youtubeId))}
         aspectRatio={aspectRatio}
         applyAspectRatio={applyAspectRatio}
         fitMode={fitMode}

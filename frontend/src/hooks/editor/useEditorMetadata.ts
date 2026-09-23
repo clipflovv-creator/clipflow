@@ -72,16 +72,38 @@ export function buildQualityOptions(data: any): QualityOption[] {
 }
 
 export function useEditorMetadata(
-  _activeUrl: string,
+  activeUrl: string,
   initialMetadata: any,
   isTwitch: boolean
 ) {
-  const [metadata, setMetadata] = useState<any>(initialMetadata || null);
+  const initialYtId = extractYouTubeId(activeUrl);
+  const [metadata, setMetadata] = useState<any>(() => {
+    if (initialMetadata) return initialMetadata;
+    if (initialYtId) {
+      return {
+        id: initialYtId,
+        title: 'YouTube Video',
+        uploader: 'YouTube',
+        channel: 'YouTube',
+        thumbnail: `https://img.youtube.com/vi/${initialYtId}/maxresdefault.jpg`,
+        duration: 0,
+        duration_string: '00:00',
+        webpage_url: activeUrl,
+        url: activeUrl,
+        formats: [],
+        _synthetic: true,
+      };
+    }
+    return null;
+  });
   const [isLoadingMeta, setIsLoadingMeta] = useState(false);
   const [errorMeta, setErrorMeta] = useState('');
   const [qualityOptions, setQualityOptions] = useState<QualityOption[]>(() => {
     if (initialMetadata) {
       return buildQualityOptions(initialMetadata);
+    }
+    if (initialYtId) {
+      return buildQualityOptions({ formats: [] });
     }
     return [];
   });
@@ -123,7 +145,49 @@ export function useEditorMetadata(
       setIsLoadingMeta(false);
     }
 
-    // 2. Check metadata cache for instant display (only if it has real playable stream formats)
+    // 2. For YouTube videos: immediately provide synthetic metadata so player & thumbnail render in 0ms
+    const ytId = extractYouTubeId(cleanTargetUrl);
+    if (ytId) {
+      setMetadata((prev: any) => {
+        if (prev?.id === ytId && !prev?._synthetic) return prev;
+        return {
+          id: ytId,
+          title: (prev?.id === ytId && prev.title) ? prev.title : 'YouTube Video',
+          uploader: (prev?.id === ytId && prev.uploader) ? prev.uploader : 'YouTube',
+          channel: (prev?.id === ytId && prev.channel) ? prev.channel : 'YouTube',
+          thumbnail: `https://img.youtube.com/vi/${ytId}/maxresdefault.jpg`,
+          duration: (prev?.id === ytId && prev.duration > 0) ? prev.duration : 0,
+          duration_string: (prev?.id === ytId && prev.duration_string) ? prev.duration_string : '00:00',
+          webpage_url: cleanTargetUrl,
+          url: cleanTargetUrl,
+          formats: (prev?.id === ytId && Array.isArray(prev.formats)) ? prev.formats : [],
+          _synthetic: (prev?.id === ytId && !prev._synthetic) ? false : true,
+        };
+      });
+      setQualityOptions((prev) => (prev.length > 0 ? prev : buildQualityOptions({ formats: [] })));
+
+      // Fast client-side oEmbed to resolve video title in milliseconds without waiting for backend yt-dlp
+      fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${ytId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((oembed) => {
+          if (oembed?.title) {
+            setMetadata((prev: any) => {
+              if (prev?.id === ytId && prev?._synthetic) {
+                return {
+                  ...prev,
+                  title: oembed.title || prev.title,
+                  uploader: oembed.author_name || prev.uploader,
+                  channel: oembed.author_name || prev.channel,
+                };
+              }
+              return prev;
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
+    // 3. Check metadata cache for instant display (only if it has real playable stream formats)
     if (!forceRefresh && !isTwitchLiveNow) {
       const cached = getCachedMetadata(cleanTargetUrl);
       if (cached && !cached._synthetic && Array.isArray(cached.formats) && cached.formats.length > 0) {
@@ -197,9 +261,12 @@ export function useEditorMetadata(
         setQualityOptions(buildQualityOptions(data));
       }
     } catch (err: any) {
-      if (!isTwitchLiveNow) {
+      const isYt = Boolean(extractYouTubeId(cleanTargetUrl));
+      if (!isTwitchLiveNow && !isYt) {
         console.error('[ClipFlow Editor] Error loading video metadata:', err);
         setErrorMeta('error');
+      } else if (isYt) {
+        console.warn('[ClipFlow Editor] Backend stream fetch delayed/failed, but YouTube iframe player remains functional:', err);
       }
     } finally {
       setIsLoadingMeta(false);
