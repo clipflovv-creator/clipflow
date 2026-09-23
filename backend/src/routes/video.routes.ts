@@ -19,7 +19,6 @@ import { promisify } from 'util';
 import { pipeline } from 'stream/promises';
 
 import { Readable } from 'stream';
-import { ProxyAgent } from 'undici';
 
 import {
   resolveYtDlpBinary,
@@ -135,13 +134,7 @@ router.get('/hls-proxy', async (req: Request, res: Response) => {
     }
 
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    const reqOrigin = req.headers.origin;
-    if (reqOrigin) {
-      res.setHeader('Access-Control-Allow-Origin', reqOrigin);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-    } else {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-    }
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Cache-Control', 'no-cache');
     res.send(rewrittenLines.join('\n'));
@@ -150,22 +143,80 @@ router.get('/hls-proxy', async (req: Request, res: Response) => {
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
- 
+
 // ─── OPTIONS preflight for CORS video streaming & frame extraction ─────────
-router.options(['/proxy', '/frame', '/thumbnail', '/hls-proxy', '/proxy-stream', '/stream-range'], (req: Request, res: Response) => {
-  const reqOrigin = req.headers.origin;
-  if (reqOrigin) {
-    res.setHeader('Access-Control-Allow-Origin', reqOrigin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  }
+router.options(['/proxy', '/frame', '/thumbnail', '/hls-proxy', '/proxy-stream', '/stream-range'], (_req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Authorization, X-Requested-With');
+  res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Authorization');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
   res.status(204).end();
 });
+
+// ─── /stream-range (Zero-buffering HTTP Range Relay with CORS) ─────────────
+router.get('/stream-range', async (req: Request, res: Response) => {
+  const targetUrl = req.query.url as string;
+  if (!targetUrl) return res.status(400).json({ error: 'URL parameter is required' });
+
+  try {
+    let userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    if (targetUrl.includes('googlevideo.com') || targetUrl.includes('youtube.com')) {
+      if (targetUrl.includes('c=IOS')) {
+        userAgent = 'com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)';
+      } else {
+        userAgent = 'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip';
+      }
+    }
+
+    const fetchHeaders: Record<string, string> = {
+      'User-Agent': userAgent,
+      'Accept': '*/*',
+    };
+
+    if (targetUrl.includes('youtube.com') || targetUrl.includes('googlevideo.com')) {
+      fetchHeaders['Referer'] = 'https://www.youtube.com/';
+      fetchHeaders['Origin'] = 'https://www.youtube.com';
+    } else if (targetUrl.includes('instagram.com') || targetUrl.includes('cdninstagram.com')) {
+      fetchHeaders['Referer'] = 'https://www.instagram.com/';
+      fetchHeaders['Origin'] = 'https://www.instagram.com';
+    } else if (targetUrl.includes('twimg.com') || targetUrl.includes('twitter.com') || targetUrl.includes('x.com')) {
+      fetchHeaders['Referer'] = 'https://twitter.com/';
+    } else if (targetUrl.includes('twitch.tv') || targetUrl.includes('ttvnw.net') || targetUrl.includes('cloudfront.net')) {
+      fetchHeaders['Referer'] = 'https://www.twitch.tv/';
+      fetchHeaders['Origin'] = 'https://www.twitch.tv';
+    }
+
+    const reqRange = req.headers.range;
+    if (reqRange) {
+      fetchHeaders['range'] = reqRange;
+    }
+
+    const response = await fetch(targetUrl, { headers: fetchHeaders });
+
+    res.status(response.status);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Authorization');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, Content-Type');
+
+    ['content-type', 'content-length', 'content-range', 'accept-ranges'].forEach((h) => {
+      const val = response.headers.get(h);
+      if (val) res.setHeader(h, val);
+    });
+
+    if (!response.body) return res.end();
+
+    // @ts-ignore
+    const nodeStream = Readable.fromWeb(response.body);
+    nodeStream.pipe(res);
+  } catch (err: any) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
+
+
 
 // ─── /proxy (stream video format to bypass CORS/403 referer issues) ─────────
 router.get('/proxy', async (req: Request, res: Response) => {
@@ -212,15 +263,9 @@ router.get('/proxy', async (req: Request, res: Response) => {
     }
 
     res.status(response.status);
-    const reqOrigin = req.headers.origin;
-    if (reqOrigin) {
-      res.setHeader('Access-Control-Allow-Origin', reqOrigin);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-    } else {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-    }
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Authorization, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Authorization');
 
     ['content-type', 'content-length', 'content-range', 'accept-ranges'].forEach(h => {
       const val = response.headers.get(h);
@@ -381,10 +426,8 @@ router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Respons
       fetchHeaders['Origin'] = 'https://www.youtube.com';
       if (streamUrl.includes('c=IOS')) {
         fetchHeaders['User-Agent'] = 'com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)';
-      } else if (streamUrl.includes('c=ANDROID')) {
-        fetchHeaders['User-Agent'] = 'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip';
       } else {
-        fetchHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+        fetchHeaders['User-Agent'] = 'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip';
       }
     } else if (streamUrl.includes('twimg.com')) {
       fetchHeaders['Referer'] = 'https://x.com/';
@@ -402,25 +445,12 @@ router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Respons
       fetchHeaders['Range'] = range;
     }
 
-    const proxyUrl = process.env.YTDLP_PROXY?.trim();
-    const dispatcher = (proxyUrl && (streamUrl.includes('googlevideo.com') || streamUrl.includes('youtube.com')))
-      ? new ProxyAgent(proxyUrl)
-      : undefined;
-
     const remoteRes = await fetch(streamUrl, {
       headers: fetchHeaders,
-      // @ts-ignore
-      dispatcher,
     });
 
-    const reqOrigin = req.headers.origin;
-    if (reqOrigin) {
-      res.setHeader('Access-Control-Allow-Origin', reqOrigin);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-    } else {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-    }
-    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Authorization, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept');
     res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
     res.setHeader('Accept-Ranges', 'bytes');
 
@@ -530,12 +560,6 @@ router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Respons
 });
 
 router.post('/metadata', async (req: Request, res: Response) => {
-  const reqOrigin = req.headers.origin;
-  if (reqOrigin) {
-    res.setHeader('Access-Control-Allow-Origin', reqOrigin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  }
-
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'Video URL is required' });
 
@@ -692,12 +716,6 @@ router.post('/metadata', async (req: Request, res: Response) => {
 
 // ─── /download (Direct Terminal Execution) ──────────────────────────────────
 router.post('/download', async (req: Request, res: Response) => {
-  const reqOrigin = req.headers.origin;
-  if (reqOrigin) {
-    res.setHeader('Access-Control-Allow-Origin', reqOrigin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  }
-
   const { url, format = 'mp4', quality = '720p', trimStart = 0, trimEnd, audioBitrate = '192k', aspectRatio, fitMode = 'pad', cropPosition = 'center', cropBox, customFileName } = req.body;
 
   if (!url) return res.status(400).json({ error: 'url is required' });

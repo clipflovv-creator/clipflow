@@ -35,7 +35,6 @@ export function YouTubePlayerView({
       cc_load_policy: 0,
       playsinline: 1,
       enablejsapi: 1,
-      origin: typeof window !== 'undefined' ? window.location.origin : undefined,
     },
   }), []);
 

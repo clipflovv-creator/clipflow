@@ -30,16 +30,6 @@ export function unwrapStreamUrl(directUrl: string): string {
   return url;
 }
 
-let edgeRelayDisabled = false;
-
-export function disableEdgeRelay(): void {
-  edgeRelayDisabled = true;
-}
-
-export function isEdgeRelayDisabled(): boolean {
-  return edgeRelayDisabled;
-}
-
 /**
  * Wraps a direct media stream URL (e.g. Googlevideo) with CORS proxy / Edge Relay.
  */
@@ -53,9 +43,10 @@ export function resolveRelayUrl(directUrl: string): string {
     return cleanUrl;
   }
 
-  // If URL points to localhost or private network, or relay was disabled due to failure:
+  // If URL points to localhost or private network, Cloudflare Edge Relay cannot access it.
+  // Directly route to local backend streaming proxy.
   const isLocalHost = cleanUrl.includes('localhost') || cleanUrl.includes('127.0.0.1');
-  if (isLocalHost || edgeRelayDisabled) {
+  if (isLocalHost) {
     return api.video.getProxyStreamUrl(cleanUrl);
   }
 
@@ -92,20 +83,18 @@ export async function fetchByteRange(
       },
     });
 
-    // If Cloudflare Edge Relay returned an error (e.g. 403, 500, 502), transparently disable and fall back
+    // If Cloudflare Edge Relay returned an error (e.g. 403, 502), transparently fall back to backend proxy
     if (!response.ok && response.status !== 206 && proxiedUrl.includes('workers.dev')) {
-      console.warn(`[MediaRangeFetcher] Edge relay returned status ${response.status}. Disabling relay & falling back to backend proxy...`);
-      edgeRelayDisabled = true;
+      console.warn(`[MediaRangeFetcher] Edge relay returned status ${response.status}. Falling back to backend proxy...`);
       const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
       response = await fetch(fallbackUrl, {
         headers: { Range: rangeHeader },
       });
     }
   } catch (netErr) {
-    // Network failure on relay: disable and fallback to backend proxy
+    // Network failure on relay: fallback to backend proxy
     if (proxiedUrl.includes('workers.dev')) {
-      console.warn('[MediaRangeFetcher] Edge relay network error, disabling relay & falling back to backend proxy:', netErr);
-      edgeRelayDisabled = true;
+      console.warn('[MediaRangeFetcher] Edge relay network error, falling back to backend proxy:', netErr);
       const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
       response = await fetch(fallbackUrl, {
         headers: { Range: rangeHeader },
@@ -278,88 +267,65 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
   });
 
   // Check if format is H.264 (preferred for broadest compatibility)
-  const getFormatTier = (f: any): number => {
-    const h = getFormatHeight(f);
-    const w = typeof f?.width === 'number' ? f.width : 0;
-    // Map by width and height to accurately classify widescreen / cinema letterbox formats:
-    // e.g. 3840x2026 is 2160p (4K UHD)
-    // e.g. 2560x1350 is 1440p (QHD / 2K)
-    // e.g. 1920x1012 is 1080p (FHD)
-    // e.g. 1280x676 is 720p (HD)
-    // e.g. 854x450 is 480p (SD)
-    // e.g. 640x338 is 360p
-    if (w >= 3600 || h >= 1900) return 2160;
-    if (w >= 2400 || h >= 1300) return 1440;
-    if (w >= 1800 || h >= 950) return 1080;
-    if (w >= 1200 || h >= 650) return 720;
-    if (w >= 800 || h >= 430) return 480;
-    if (w >= 600 || h >= 320) return 360;
-    if (w >= 400 || h >= 220) return 240;
-    if (w >= 240 || h >= 130) return 144;
-    return h;
-  };
-
-  // Check if format is H.264 (preferred for broadest compatibility)
   const isAvcMp4 = (f: any) => {
     if (!f || !f.vcodec || f.vcodec === 'none') return false;
     const vc = f.vcodec.toLowerCase();
     return vc.startsWith('avc') || vc.startsWith('h264') || (f.ext === 'mp4' && !vc.startsWith('vp') && !vc.startsWith('av01'));
   };
 
-  const rankFormats = (list: any[]) => {
-    return [...list].sort((a, b) => {
-      // 1. Prefer MP4 container
-      const aMp4 = a.ext === 'mp4' ? 1 : 0;
-      const bMp4 = b.ext === 'mp4' ? 1 : 0;
-      if (aMp4 !== bMp4) return bMp4 - aMp4;
+  // Accept any video codec (VP9, AV1, H.264) — FFmpeg.wasm handles all
+  const hasVideo = (f: any) => f?.url && f?.vcodec && f.vcodec !== 'none';
 
-      // 2. Prefer H.264 if available at this tier, then VP9 (vp09), then AV1 (av01)
-      const codecScore = (f: any) => {
-        if (isAvcMp4(f)) return 3;
-        if (f.vcodec?.toLowerCase().startsWith('vp')) return 2;
-        if (f.vcodec?.toLowerCase().startsWith('av01')) return 1;
-        return 0;
-      };
-      const cDiff = codecScore(b) - codecScore(a);
-      if (cDiff !== 0) return cDiff;
-
-      // 3. Higher bitrate
-      return (b.tbr || b.vbr || 0) - (a.tbr || a.vbr || 0);
-    });
-  };
+  // Find best matching video stream directly corresponding to requested CDN quality tier:
+  const h264VideoOnly = videoOnly.filter(isAvcMp4);
+  const sortedH264 = [...h264VideoOnly].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
 
   let bestVideo: any = null;
 
   if (isOriginal) {
-    const allSorted = [...videoOnly, ...combined].sort((a, b) => getFormatTier(b) - getFormatTier(a));
-    const highestTier = allSorted.length > 0 ? getFormatTier(allSorted[0]) : 0;
-    const atHighest = allSorted.filter((f) => getFormatTier(f) === highestTier);
-    bestVideo = rankFormats(atHighest)[0] || null;
+    // "original" / "source" selects the maximum native H.264 stream directly from the CDN
+    bestVideo = sortedH264[0] || videoOnly.find(isAvcMp4) || videoOnly[0] || null;
   } else {
-    // 1st priority: Exact tier match in videoOnly formats (supports 4K 2160p, 1440p, 1080p, etc.)
-    const atTargetTier = videoOnly.filter((f) => getFormatTier(f) === targetHeight);
-    if (atTargetTier.length > 0) {
-      bestVideo = rankFormats(atTargetTier)[0];
-    } else {
-      // Check combined formats at exact requested tier
-      const combinedAtTier = combined.filter((f) => getFormatTier(f) === targetHeight);
-      if (combinedAtTier.length > 0) {
-        bestVideo = rankFormats(combinedAtTier)[0];
-      }
-    }
-
-    // 2nd priority: Highest available tier <= targetHeight
+    // 1st priority: Exact height and H.264 MP4
+    bestVideo = sortedH264.find((f) => getFormatHeight(f) === targetHeight);
+    // 2nd priority: Ultrawide tolerance (e.g. 1012 for 1080p, 676 for 720p, 450 for 480p, 338 for 360p)
     if (!bestVideo) {
-      const allSorted = [...videoOnly, ...combined].sort((a, b) => getFormatTier(b) - getFormatTier(a));
-      const candidates = allSorted.filter((f) => getFormatTier(f) <= targetHeight);
-      if (candidates.length > 0) {
-        const highestAvailTier = getFormatTier(candidates[0]);
-        const atAvail = candidates.filter((f) => getFormatTier(f) === highestAvailTier);
-        bestVideo = rankFormats(atAvail)[0];
-      } else if (allSorted.length > 0) {
-        bestVideo = rankFormats(allSorted)[0];
-      }
+      bestVideo = sortedH264.find((f) => Math.abs(getFormatHeight(f) - targetHeight) <= 80);
     }
+    // 3rd priority: Closest height <= targetHeight (preferring H.264 MP4)
+    if (!bestVideo) {
+      bestVideo = sortedH264.find((f) => getFormatHeight(f) <= targetHeight) ||
+                  sortedH264[sortedH264.length - 1] || null;
+    }
+    // 4th priority: Any videoOnly matching targetHeight if no H.264
+    if (!bestVideo && videoOnly.length > 0) {
+      const sortedAll = [...videoOnly].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+      bestVideo = sortedAll.find((f) => getFormatHeight(f) === targetHeight) ||
+                  sortedAll.find((f) => getFormatHeight(f) <= targetHeight) ||
+                  sortedAll[0] || null;
+    }
+  }
+
+  // Fallback 1: combined formats (H.264 preferred, then any)
+  if (!bestVideo && combined.length > 0) {
+    const sortedCombined = [...combined].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+    bestVideo = sortedCombined.find((f) => getFormatHeight(f) === targetHeight && isAvcMp4(f)) ||
+                sortedCombined.find((f) => Math.abs(getFormatHeight(f) - targetHeight) <= 80 && isAvcMp4(f)) ||
+                sortedCombined.find((f) => getFormatHeight(f) <= targetHeight && isAvcMp4(f)) ||
+                sortedCombined.find((f) => getFormatHeight(f) <= targetHeight) ||
+                sortedCombined[0] || null;
+  }
+
+  // Fallback 2: VP9/AV1 video-only (FFmpeg.wasm supports these)
+  if (!bestVideo && videoOnly.length > 0) {
+    const sortedAll = [...videoOnly.filter(hasVideo)].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+    bestVideo = sortedAll.find((f) => getFormatHeight(f) <= targetHeight) || sortedAll[0] || null;
+  }
+
+  // Fallback 3: Absolute last resort — any format with a video stream
+  if (!bestVideo) {
+    const anyVideo = formats.filter(hasVideo).sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+    bestVideo = anyVideo[0] || null;
   }
 
   // Find best matching audio stream (strongly prioritize original/default audio over dubs & prefer M4A / AAC)
@@ -380,23 +346,20 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
   }
 
   // Best combined format fallback
-  const sortedCombined = [...combined].sort((a, b) => getFormatTier(b) - getFormatTier(a));
-  const bestCombined = sortedCombined.find((f) => getFormatTier(f) === targetHeight && isAvcMp4(f)) ||
-                       sortedCombined.find((f) => getFormatTier(f) === targetHeight) ||
-                       sortedCombined.find((f) => getFormatTier(f) <= targetHeight) ||
+  const sortedCombined = [...combined].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+  const bestCombined = sortedCombined.find((f) => getFormatHeight(f) === targetHeight && isAvcMp4(f)) ||
+                       sortedCombined.find((f) => getFormatHeight(f) === targetHeight) ||
+                       sortedCombined.find((f) => getFormatHeight(f) <= targetHeight) ||
                        sortedCombined[0] || null;
 
-  const actualTier = bestVideo
-    ? getFormatTier(bestVideo)
-    : (bestCombined ? getFormatTier(bestCombined) : 0);
   const actualHeight = bestVideo
     ? getFormatHeight(bestVideo)
     : (bestCombined ? getFormatHeight(bestCombined) : 0);
-  const actualQuality = actualTier > 0 ? `${actualTier}p` : (actualHeight > 0 ? `${actualHeight}p` : targetQuality);
+  const actualQuality = actualHeight > 0 ? `${actualHeight}p` : targetQuality;
 
   let qualityNote: string | undefined = undefined;
-  if (!isOriginal && targetHeight < 90000 && actualTier > 0) {
-    if (targetHeight > actualTier) {
+  if (!isOriginal && targetHeight < 90000 && actualHeight > 0) {
+    if (targetHeight > actualHeight + 80) {
       qualityNote = `${targetQuality} is not available on this video source — using highest available native ${actualQuality} stream directly from CDN.`;
     }
   }
