@@ -1,5 +1,4 @@
 import React from 'react';
-import { Check, Info, Sparkles } from 'lucide-react';
 
 export interface QualityOption {
   label: string;
@@ -95,25 +94,6 @@ export const ExportFormatSection: React.FC<ExportFormatSectionProps> = ({
     };
   });
 
-  const selectedHeight = React.useMemo(() => {
-    const clean = parseInt((downloadQuality || '').replace(/[^\d]/g, ''), 10);
-    return clean || 1080;
-  }, [downloadQuality]);
-
-  const isSelectedQualityNative = isOptionNative(selectedHeight);
-
-  // Find nearest native quality that is available
-  const nearestNativeQuality = React.useMemo(() => {
-    const nativeOpts = qualityList.filter((q) => q.isNative);
-    if (nativeOpts.length === 0) return `${maxNativeHeight}p`;
-    const lowerOrEqual = nativeOpts.filter((q) => q.height <= selectedHeight);
-    if (lowerOrEqual.length > 0) {
-      const sorted = [...lowerOrEqual].sort((a, b) => b.height - a.height);
-      return sorted[0].label;
-    }
-    const sortedAll = [...nativeOpts].sort((a, b) => b.height - a.height);
-    return sortedAll[0]?.label || `${maxNativeHeight}p`;
-  }, [qualityList, selectedHeight, maxNativeHeight]);
 
   return (
     <div className="space-y-4">
@@ -149,12 +129,9 @@ export const ExportFormatSection: React.FC<ExportFormatSectionProps> = ({
 
       {/* ── 1. Video Quality Selection ── */}
       {downloadFormat === 'mp4' && (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Select Video Resolution</p>
-            <span className="text-[10px] font-semibold text-zinc-500">
-              Source Max: <span className="text-zinc-300 font-bold">{maxNativeHeight}p</span>
-            </span>
           </div>
 
           <div className="grid grid-cols-4 gap-1.5">
@@ -169,86 +146,22 @@ export const ExportFormatSection: React.FC<ExportFormatSectionProps> = ({
                 (q.height === 1440 && downloadQuality.toLowerCase().includes('1440')) ||
                 (q.height === 1080 && downloadQuality.toLowerCase().includes('1080'));
 
-              let badge = '';
-              if (q.height >= 2160) badge = '4K';
-              else if (q.height === 1440) badge = '2K';
-              else if (q.height === 1080) badge = 'HD';
-
               return (
                 <button
                   key={q.label}
                   type="button"
                   onClick={() => setDownloadQuality(q.label)}
-                  className={`py-2 px-1 rounded-xl text-center border transition-all relative flex flex-col items-center justify-center gap-0.5 group cursor-pointer ${
+                  className={`py-2 px-1 rounded-xl text-center border transition-all relative flex items-center justify-center cursor-pointer ${
                     isSelected
                       ? 'bg-white text-black font-black border-white shadow-md'
-                      : q.isNative
-                        ? 'bg-zinc-950/80 border-white/10 hover:border-white/30 text-zinc-300 hover:text-white'
-                        : 'bg-zinc-950/40 border-white/5 hover:border-white/20 text-zinc-400 hover:text-zinc-200'
+                      : 'bg-zinc-950/80 border-white/10 hover:border-white/30 text-zinc-300 hover:text-white'
                   }`}
                 >
-                  {isSelected && (
-                    <div className="absolute top-1 right-1 w-3 h-3 rounded-full bg-black/20 flex items-center justify-center">
-                      <Check className="w-2 h-2 text-black" />
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-bold tracking-tight">{displayLabel}</span>
-                    {badge && (
-                      <span
-                        className={`text-[8px] px-1 py-0.2 rounded font-extrabold tracking-wider ${
-                          isSelected
-                            ? 'bg-black text-white'
-                            : q.isNative
-                              ? 'bg-white/15 text-white'
-                              : 'bg-white/5 text-zinc-500'
-                        }`}
-                      >
-                        {badge}
-                      </span>
-                    )}
-                  </div>
-                  <span
-                    className={`text-[8.5px] leading-tight ${
-                      isSelected
-                        ? 'text-zinc-600 font-semibold'
-                        : q.isNative
-                          ? 'text-emerald-400 font-medium'
-                          : 'text-zinc-500'
-                    }`}
-                  >
-                    {q.isNative ? 'Native' : `Near ${nearestNativeQuality}`}
-                  </span>
+                  <span className="text-xs font-bold tracking-tight">{displayLabel}</span>
                 </button>
               );
             })}
           </div>
-
-          {/* Quality Note: When selected quality exceeds source video resolution */}
-          {!isSelectedQualityNative && (
-            <div className="flex items-start gap-2 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300">
-              <Info className="w-3.5 h-3.5 shrink-0 text-amber-400 mt-0.5" />
-              <div className="space-y-0.5 text-left">
-                <p className="text-[11px] font-bold text-amber-200">
-                  Source Quality Note ({downloadQuality})
-                </p>
-                <p className="text-[10px] text-amber-300/90 leading-relaxed">
-                  This video source maxes out at <span className="font-semibold text-white">{maxNativeHeight}p</span>. 
-                  Selecting <span className="font-semibold text-white">{downloadQuality}</span> will automatically download the highest available native <span className="font-semibold text-emerald-400">{nearestNativeQuality}</span> stream directly from the CDN with zero distortion.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Quality Note: When 4K / 2K is natively available */}
-          {isSelectedQualityNative && selectedHeight >= 1440 && (
-            <div className="flex items-start gap-2 p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
-              <Sparkles className="w-3.5 h-3.5 shrink-0 text-emerald-400 mt-0.5" />
-              <p className="text-[10px] text-emerald-300/90 leading-relaxed text-left">
-                ✨ <strong>{downloadQuality} Ultra-HD stream detected!</strong> Full resolution stream will be fetched directly from the CDN.
-              </p>
-            </div>
-          )}
         </div>
       )}
 

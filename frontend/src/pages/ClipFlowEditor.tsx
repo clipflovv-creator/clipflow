@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import type { YouTubePlayer } from 'react-youtube';
 import { useAuth } from '../context/AuthContext';
-import { CloudStorageModal } from '../components/CloudStorageModal';
 import { AuthModal } from '../components/AuthModal';
 import { EditorSidebar } from '../components/EditorSidebar';
 import { type CropBox } from '../components/CropFrameOverlay';
@@ -82,7 +81,6 @@ export default function ClipFlowEditor() {
 
   const { isPro } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showCloudStorageModal, setShowCloudStorageModal] = useState(false);
   const [showCompanionModal, setShowCompanionModal] = useState(false);
 
   // Mobile App Controls & Modals
@@ -1418,11 +1416,6 @@ export default function ClipFlowEditor() {
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
-      />
-
-      <CloudStorageModal
-        isOpen={showCloudStorageModal}
-        onClose={() => setShowCloudStorageModal(false)}
       />
 
       {/* Desktop Companion Engine Modal */}

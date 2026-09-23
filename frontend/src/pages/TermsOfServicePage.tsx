@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useLocation } from 'react-router-dom';
 
 type PolicyTab = 'terms' | 'privacy' | 'api';
 
@@ -12,16 +12,29 @@ interface Section {
 
 export default function TermsOfServicePage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = (searchParams.get('tab') as PolicyTab) || 'terms';
-  const [activeTab, setActiveTab] = useState<PolicyTab>(initialTab);
+  const location = useLocation();
+
+  const getInitialTab = (): PolicyTab => {
+    const param = searchParams.get('tab') as PolicyTab;
+    if (param && (param === 'terms' || param === 'privacy' || param === 'api')) return param;
+    if (location.pathname.includes('privacy')) return 'privacy';
+    if (location.pathname.includes('api')) return 'api';
+    return 'terms';
+  };
+
+  const [activeTab, setActiveTab] = useState<PolicyTab>(getInitialTab);
   const [activeSection, setActiveSection] = useState('sec-1');
 
   useEffect(() => {
     const tab = searchParams.get('tab') as PolicyTab;
     if (tab && (tab === 'terms' || tab === 'privacy' || tab === 'api')) {
       setActiveTab(tab);
+    } else if (location.pathname.includes('privacy')) {
+      setActiveTab('privacy');
+    } else if (location.pathname.includes('api')) {
+      setActiveTab('api');
     }
-  }, [searchParams]);
+  }, [searchParams, location.pathname]);
 
   const handleTabChange = (tab: PolicyTab) => {
     setActiveTab(tab);

@@ -29,6 +29,10 @@ function App() {
             {/* Legal / Terms of Service */}
             <Route path="/terms" element={<TermsOfServicePage />} />
             <Route path="/terms-of-service" element={<TermsOfServicePage />} />
+            <Route path="/terms-and-conditions" element={<TermsOfServicePage />} />
+            <Route path="/privacy" element={<TermsOfServicePage />} />
+            <Route path="/privacy-policy" element={<TermsOfServicePage />} />
+            <Route path="/api-terms" element={<TermsOfServicePage />} />
 
             {/* Authentication Routes */}
             <Route path="/login" element={<LoginPage />} />
