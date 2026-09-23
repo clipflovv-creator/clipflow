@@ -558,6 +558,20 @@ router.post('/metadata', async (req: Request, res: Response) => {
   try {
     const metadata: any = await YtDlpService.getVideoMetadata(url);
 
+    // Helper: YouTube CDN (googlevideo.com) URLs don't send CORS headers.
+    // Browser fetch() from FFmpeg.wasm will be blocked without a proxy.
+    // Route all YouTube stream URLs through our /proxy-stream endpoint.
+    const host = `${req.protocol}://${req.get('host')}`;
+    const isYouTubeCdn = (u: string): boolean => {
+      if (!u) return false;
+      const l = u.toLowerCase();
+      return l.includes('googlevideo.com') || (l.includes('youtube.com') && l.includes('videoplayback'));
+    };
+    const proxyFmtUrl = (rawUrl: string): string => {
+      if (!rawUrl || !isYouTubeCdn(rawUrl)) return rawUrl;
+      return `${host}/api/video/proxy-stream?url=${encodeURIComponent(rawUrl)}`;
+    };
+
     // Prioritize formats with BOTH video AND audio so UI preview can play sound
     const audioAndVideoFormats = (metadata.formats || []).filter(
       (f: any) => f.url && f.acodec && f.acodec !== 'none' && f.vcodec && f.vcodec !== 'none'
@@ -573,7 +587,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
     // Only video formats (never pick an audio-only stream as directStreamUrl which is meant for video display)
     const videoFormats = (metadata.formats || []).filter((f: any) => f.url && f.vcodec && f.vcodec !== 'none');
 
-    const directStreamUrl =
+    const rawDirectStreamUrl =
       format1080?.url ||
       format720?.url ||
       (progressiveMp4.length > 0 ? progressiveMp4[progressiveMp4.length - 1].url : undefined) ||
@@ -581,6 +595,8 @@ router.post('/metadata', async (req: Request, res: Response) => {
       metadata.direct_stream_url ||
       metadata.url ||
       (videoFormats.length > 0 ? videoFormats[videoFormats.length - 1]?.url : undefined);
+
+    const directStreamUrl = proxyFmtUrl(rawDirectStreamUrl);
 
     let parsedDuration = typeof metadata.duration === 'number' && metadata.duration > 0 ? metadata.duration : undefined;
     if (!parsedDuration && metadata.duration_string) {
@@ -661,7 +677,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
         is_default: f.is_default || (typeof f.format_note === 'string' && f.format_note.toLowerCase().includes('default')),
         tbr: f.tbr,
         abr: f.abr,
-        url: f.url,
+        url: proxyFmtUrl(f.url),
       })),
       video_formats: (metadata.formats || [])
         .filter((f: any) => f.url && f.vcodec && f.vcodec !== 'none')
@@ -676,7 +692,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
           acodec: f.acodec,
           tbr: f.tbr,
           filesize: f.filesize || f.filesize_approx,
-          url: f.url,
+          url: proxyFmtUrl(f.url),
         })),
       audio_formats: (metadata.formats || [])
         .filter((f: any) => f.url && f.acodec && f.acodec !== 'none')
@@ -691,7 +707,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
           is_default: f.is_default || (typeof f.format_note === 'string' && f.format_note.toLowerCase().includes('default')),
           abr: f.abr,
           filesize: f.filesize || f.filesize_approx,
-          url: f.url,
+          url: proxyFmtUrl(f.url),
         })),
     };
 
