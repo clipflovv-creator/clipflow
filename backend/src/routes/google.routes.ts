@@ -101,11 +101,18 @@ router.get(['/callback', '/auth/callback'], async (req: Request, res: Response) 
     // Exchange authorization code for user profile and encrypted tokens
     const { user, isNewUser } = await GoogleOAuthService.handleCallback(code, stateUserId);
 
-    // Send welcome email to users signing in with Google for the first time
-    if (isNewUser) {
-      emailService.sendWelcomeEmail(user.email, user.name).catch((err) => {
-        console.warn('[Google OAuth] Welcome email error:', err.message);
-      });
+    // Send welcome email to users signing in with Google if not yet sent
+    if (isNewUser || !user.welcomeEmailSent) {
+      try {
+        const sent = await emailService.sendWelcomeEmail(user.email, user.name);
+        if (sent) {
+          user.welcomeEmailSent = true;
+          await user.save();
+          console.log(`[Google OAuth] Welcome email delivered to ${user.email}`);
+        }
+      } catch (emailErr: any) {
+        console.warn('[Google OAuth] Welcome email error:', emailErr.message);
+      }
     }
 
     // Create / rotate server-side session and set secure HttpOnly cookie

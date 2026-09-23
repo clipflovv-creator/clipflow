@@ -4,56 +4,109 @@
  * and high deliverability across email providers (Gmail, Apple Mail, Outlook).
  */
 
+interface BaseLayoutOptions {
+  title: string;
+  preheader?: string;
+  content: string;
+}
+
 /**
- * Base email layout wrapper
+ * Universal HTML Email Wrapper with MSO & WebKit support.
+ * Clean, modern light-neutral container with high deliverability score.
  */
-function emailLayout(title: string, content: string): string {
+function emailLayout({ title, preheader, content }: BaseLayoutOptions): string {
+  const previewText = preheader
+    ? `<div style="display: none; max-height: 0px; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; max-width: 0px; opacity: 0;">
+        ${escapeHtml(preheader)}
+        &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+      </div>`
+    : '';
+
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <title>${title}</title>
+  <meta name="x-apple-disable-message-reformatting">
+  <title>${escapeHtml(title)}</title>
   <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
   <style type="text/css">
-    body, table, td {font-family: Arial, Helvetica, sans-serif !important;}
+    body, table, td, p, a, span { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; }
   </style>
   <![endif]-->
+  <style type="text/css">
+    body {
+      margin: 0 !important;
+      padding: 0 !important;
+      -webkit-text-size-adjust: 100% !important;
+      -ms-text-size-adjust: 100% !important;
+      background-color: #f8fafc !important;
+    }
+    table, td {
+      border-collapse: collapse !important;
+      mso-table-lspace: 0pt !important;
+      mso-table-rspace: 0pt !important;
+    }
+    img {
+      border: 0 !important;
+      outline: none !important;
+      text-decoration: none !important;
+      -ms-interpolation-mode: bicubic !important;
+    }
+    a {
+      text-decoration: none;
+    }
+    @media only screen and (max-width: 600px) {
+      .email-container {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      .content-padding {
+        padding: 28px 20px !important;
+      }
+      .otp-code {
+        font-size: 28px !important;
+        letter-spacing: 5px !important;
+      }
+    }
+  </style>
 </head>
-<body style="margin: 0; padding: 0; background-color: #07080c; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #f1f5f9; -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;">
-  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #07080c; min-height: 100vh;">
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; -webkit-font-smoothing: antialiased;">
+  ${previewText}
+  <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; min-height: 100vh;">
     <tr>
-      <td align="center" style="padding: 36px 16px;">
-        <!-- Container Card -->
-        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 580px; background-color: #0f111a; border-radius: 18px; border: 1px solid #222538; overflow: hidden; box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.7);">
+      <td align="center" style="padding: 48px 16px;">
+        
+        <!-- Main Card Container -->
+        <table role="presentation" class="email-container" width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 560px; background-color: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);">
           
-          <!-- Top Gradient Accent Line -->
+          <!-- Top Header Brand Bar -->
           <tr>
-            <td style="height: 4px; background: linear-gradient(90deg, #9333ea, #6366f1, #38bdf8);"></td>
-          </tr>
-
-          <!-- Header Logo Bar -->
-          <tr>
-            <td align="center" style="padding: 32px 32px 20px 32px;">
-              <table role="presentation" border="0" cellspacing="0" cellpadding="0">
+            <td style="padding: 28px 36px 20px 36px; border-bottom: 1px solid #f1f5f9;">
+              <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
                 <tr>
-                  <td align="center">
-                    <div style="display: inline-block; background: linear-gradient(135deg, rgba(147, 51, 234, 0.2), rgba(99, 102, 241, 0.2)); border: 1px solid rgba(147, 51, 234, 0.4); border-radius: 12px; padding: 8px 16px;">
-                      <span style="font-size: 17px; font-weight: 800; letter-spacing: 0.5px; color: #ffffff;">
-                        <span style="color: #c084fc;">CLIP</span>FLOW
-                      </span>
-                      <span style="font-size: 11px; font-weight: 600; color: #94a3b8; margin-left: 6px; text-transform: uppercase; letter-spacing: 1px;">STUDIO</span>
-                    </div>
+                  <td>
+                    <span style="font-size: 15px; font-weight: 700; letter-spacing: 0.5px; color: #0f172a;">CLIPFLOW</span>
+                  </td>
+                  <td align="right">
+                    <span style="font-size: 11px; font-weight: 600; color: #64748b; letter-spacing: 0.5px; text-transform: uppercase;">Workspace</span>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
 
-          <!-- Main Content Slot -->
+          <!-- Body Content Slot -->
           <tr>
-            <td style="padding: 10px 36px 36px 36px;">
+            <td class="content-padding" style="padding: 36px 36px 32px 36px;">
               ${content}
             </td>
           </tr>
@@ -67,13 +120,14 @@ function emailLayout(title: string, content: string): string {
               <p style="margin: 0; font-size: 11px; color: #475569;">
                 If you did not request this, you can safely ignore this email.
               </p>
-              <p style="margin: 12px 0 0 0; font-size: 10px; color: #334155;">
-                &copy; ${new Date().getFullYear()} ClipFlow. All rights reserved.
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                ClipFlow Technologies Inc. &bull; All rights reserved.
               </p>
             </td>
           </tr>
 
         </table>
+
       </td>
     </tr>
   </table>
@@ -95,17 +149,18 @@ export function getVerificationEmailHtml(params: {
     ? `${frontendUrl}/verify-email?token=${encodeURIComponent(rawToken)}`
     : `${frontendUrl}/verify-email?code=${encodeURIComponent(otpCode)}`;
 
-  const greeting = name ? `Hey ${escapeHtml(name)},` : 'Hello,';
+  const recipientGreeting = name && name.trim() ? `Hi ${escapeHtml(name.trim())},` : 'Hello,';
 
   const body = `
-    <div style="text-align: center; margin-bottom: 24px;">
-      <h1 style="margin: 0 0 10px 0; font-size: 22px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px;">
-        Verify Your Email Address
-      </h1>
-      <p style="margin: 0; font-size: 14px; color: #94a3b8; line-height: 1.6;">
-        ${greeting} Welcome to ClipFlow! Enter the 6-digit verification code below in your browser to verify your email and activate your account.
-      </p>
-    </div>
+    <h1 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600; color: #0f172a; letter-spacing: -0.02em; line-height: 1.3;">
+      Confirm your email address
+    </h1>
+    <p style="margin: 0 0 20px 0; font-size: 14px; color: #475569; line-height: 1.6;">
+      ${recipientGreeting}
+    </p>
+    <p style="margin: 0 0 28px 0; font-size: 14px; color: #475569; line-height: 1.6;">
+      Please use the following verification code to confirm your email address and access your ClipFlow workspace.
+    </p>
 
     <!-- OTP Display Box -->
     <div style="background-color: #090a10; border: 1px solid #312e81; border-radius: 14px; padding: 24px; text-align: center; margin: 26px 0; box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);">
@@ -127,17 +182,21 @@ export function getVerificationEmailHtml(params: {
       </a>
     </div>
 
-    <div style="border-top: 1px solid #1e2235; padding-top: 18px; margin-top: 24px; text-align: center;">
-      <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
-        Or paste this verification link into your browser:<br>
-        <a href="${verificationUrl}" style="color: #a855f7; word-break: break-all; font-size: 11px; text-decoration: underline;">
-          ${verificationUrl}
-        </a>
+    <div style="border-top: 1px solid #f1f5f9; padding-top: 20px; margin-top: 28px;">
+      <p style="margin: 0 0 6px 0; font-size: 12px; color: #64748b; line-height: 1.5;">
+        Alternatively, copy and paste this verification URL into your browser:
       </p>
+      <a href="${verificationUrl}" target="_blank" style="font-size: 12px; color: #475569; word-break: break-all; text-decoration: underline;">
+        ${verificationUrl}
+      </a>
     </div>
   `;
 
-  return emailLayout('Verify your ClipFlow account', body);
+  return emailLayout({
+    title: 'Confirm your email address - ClipFlow',
+    preheader: `Your verification code is ${otpCode}. Valid for 24 hours.`,
+    content: body,
+  });
 }
 
 export function getVerificationEmailText(params: {
@@ -210,14 +269,18 @@ export function getPasswordResetEmailHtml(params: {
       </a>
     </div>
 
-    <div style="border-top: 1px solid #1e2235; padding-top: 18px; margin-top: 24px;">
-      <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5; text-align: center;">
-        If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged.
+    <div style="border-top: 1px solid #f1f5f9; padding-top: 20px; margin-top: 28px;">
+      <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.5;">
+        If you did not initiate this request, no action is required and your account remains secure.
       </p>
     </div>
   `;
 
-  return emailLayout('Reset your ClipFlow password', body);
+  return emailLayout({
+    title: 'Reset your password - ClipFlow',
+    preheader: `Your reset code is ${otpCode}. Valid for 60 minutes.`,
+    content: body,
+  });
 }
 
 export function getPasswordResetEmailText(params: {
@@ -246,7 +309,7 @@ ${frontendUrl}`;
 }
 
 /**
- * 3. Feature-Rich Welcome Email Template
+ * 3. Minimalist Executive Welcome Email Template
  */
 export function getWelcomeEmailHtml(params: {
   name?: string;
@@ -254,7 +317,8 @@ export function getWelcomeEmailHtml(params: {
   frontendUrl: string;
 }): string {
   const { name, frontendUrl } = params;
-  const greeting = name ? `Welcome aboard, ${escapeHtml(name)}!` : 'Welcome to ClipFlow Studio!';
+  const recipientGreeting = name && name.trim() ? `Hi ${escapeHtml(name.trim())},` : 'Hello,';
+  const studioUrl = `${frontendUrl}/editor/storage`;
 
   const body = `
     <!-- Hero Banner -->
@@ -278,7 +342,6 @@ export function getWelcomeEmailHtml(params: {
 
       <!-- Grid Cards -->
       <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
-        <!-- Feature 1 -->
         <tr>
           <td style="padding-bottom: 12px;">
             <div style="background-color: #0b0c14; border: 1px solid #1f2337; border-radius: 12px; padding: 14px 16px;">
@@ -291,8 +354,6 @@ export function getWelcomeEmailHtml(params: {
             </div>
           </td>
         </tr>
-
-        <!-- Feature 2 -->
         <tr>
           <td style="padding-bottom: 12px;">
             <div style="background-color: #0b0c14; border: 1px solid #1f2337; border-radius: 12px; padding: 14px 16px;">
@@ -305,8 +366,6 @@ export function getWelcomeEmailHtml(params: {
             </div>
           </td>
         </tr>
-
-        <!-- Feature 3 -->
         <tr>
           <td style="padding-bottom: 12px;">
             <div style="background-color: #0b0c14; border: 1px solid #1f2337; border-radius: 12px; padding: 14px 16px;">
@@ -319,8 +378,6 @@ export function getWelcomeEmailHtml(params: {
             </div>
           </td>
         </tr>
-
-        <!-- Feature 4 -->
         <tr>
           <td style="padding-bottom: 4px;">
             <div style="background-color: #0b0c14; border: 1px solid #1f2337; border-radius: 12px; padding: 14px 16px;">

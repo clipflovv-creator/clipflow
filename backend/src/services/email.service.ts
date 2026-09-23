@@ -12,23 +12,26 @@ import {
 
 dotenv.config();
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const EMAIL_FROM = process.env.EMAIL_FROM || 'ClipFlow <no-reply@clipflow.cliy.me>';
+const DEFAULT_FRONTEND_URL = 'http://localhost:5173';
+const DEFAULT_EMAIL_FROM = 'ClipFlow <no-reply@clipflow.cliy.me>';
 
 class EmailService {
   private resend: Resend | null = null;
   private transporter: any = null;
+  private initialized: boolean = false;
 
   constructor() {
     this.initClients();
   }
 
   private initClients() {
+    const fromAddress = process.env.EMAIL_FROM || DEFAULT_EMAIL_FROM;
+
     // 1. Resend API Client (Primary)
     if (process.env.RESEND_API_KEY) {
       try {
         this.resend = new Resend(process.env.RESEND_API_KEY);
-        console.log('[EmailService] Resend client initialized (from:', EMAIL_FROM, ')');
+        console.log(`[EmailService] Resend API client initialized (from: ${fromAddress})`);
       } catch (err: any) {
         console.warn('[EmailService] Failed to initialize Resend:', err.message);
       }
@@ -46,10 +49,30 @@ class EmailService {
             pass: process.env.SMTP_PASSWORD,
           },
         });
+        console.log('[EmailService] SMTP fallback transporter initialized');
       } catch (err: any) {
         console.warn('[EmailService] Failed to initialize SMTP transporter:', err.message);
       }
     }
+
+    this.initialized = true;
+  }
+
+  /**
+   * Lazily re-checks environment variables in case dotenv was loaded after service creation
+   */
+  private ensureClients() {
+    if (!this.resend && process.env.RESEND_API_KEY) {
+      this.initClients();
+    }
+  }
+
+  private getEmailFrom(): string {
+    return process.env.EMAIL_FROM || DEFAULT_EMAIL_FROM;
+  }
+
+  private getFrontendUrl(): string {
+    return process.env.FRONTEND_URL || DEFAULT_FRONTEND_URL;
   }
 
   /**
@@ -67,7 +90,7 @@ class EmailService {
     if (this.resend) {
       try {
         const { data, error } = await this.resend.emails.send({
-          from: EMAIL_FROM,
+          from: emailFrom,
           to: [to],
           subject,
           html,
@@ -77,25 +100,27 @@ class EmailService {
         if (error) {
           console.error('[EmailService:Resend Error]', JSON.stringify(error));
         } else {
-          console.log(`[EmailService] Email delivered via Resend API to: ${to} (ID: ${data?.id})`);
+          console.log(`[EmailService] Delivered via Resend to ${to} (ID: ${data?.id})`);
           return true;
         }
       } catch (err: any) {
         console.error('[EmailService:Resend Exception]', err.message);
       }
+    } else {
+      console.warn('[EmailService] Warning: No RESEND_API_KEY found in environment');
     }
 
     // B. Attempt SMTP Fallback
     if (this.transporter) {
       try {
         await this.transporter.sendMail({
-          from: EMAIL_FROM,
+          from: emailFrom,
           to,
           subject,
           html,
           ...(text ? { text } : {}),
         });
-        console.log(`[EmailService] Email delivered via SMTP to: ${to}`);
+        console.log(`[EmailService] Delivered via SMTP fallback to: ${to}`);
         return true;
       } catch (err: any) {
         console.warn('[EmailService:SMTP Fallback Error]', err.message);
@@ -116,8 +141,8 @@ class EmailService {
     name?: string
   ): Promise<boolean> {
     const verificationUrl = rawToken
-      ? `${FRONTEND_URL}/verify-email?token=${encodeURIComponent(rawToken)}`
-      : `${FRONTEND_URL}/verify-email?code=${encodeURIComponent(otpCode)}`;
+      ? `${frontendUrl}/verify-email?token=${encodeURIComponent(rawToken)}`
+      : `${frontendUrl}/verify-email?code=${encodeURIComponent(otpCode)}`;
 
     console.log('\n================== EMAIL VERIFICATION ==================');
     console.log(`To: ${email}`);
@@ -129,7 +154,7 @@ class EmailService {
       otpCode,
       rawToken,
       name,
-      frontendUrl: FRONTEND_URL,
+      frontendUrl,
     });
 
     const text = getVerificationEmailText({
@@ -141,7 +166,7 @@ class EmailService {
 
     return await this.deliverEmail({
       to: email,
-      subject: `Verify your ClipFlow account (Code: ${otpCode})`,
+      subject: `Verify your email address - ClipFlow`,
       html,
       text,
     });
@@ -156,8 +181,8 @@ class EmailService {
     rawToken?: string
   ): Promise<boolean> {
     const resetUrl = rawToken
-      ? `${FRONTEND_URL}/reset-password?token=${encodeURIComponent(rawToken)}`
-      : `${FRONTEND_URL}/reset-password?code=${encodeURIComponent(otpCode)}`;
+      ? `${frontendUrl}/reset-password?token=${encodeURIComponent(rawToken)}`
+      : `${frontendUrl}/reset-password?code=${encodeURIComponent(otpCode)}`;
 
     console.log('\n================== PASSWORD RESET ==================');
     console.log(`To: ${email}`);
@@ -168,7 +193,7 @@ class EmailService {
     const html = getPasswordResetEmailHtml({
       otpCode,
       rawToken,
-      frontendUrl: FRONTEND_URL,
+      frontendUrl,
     });
 
     const text = getPasswordResetEmailText({
@@ -179,14 +204,14 @@ class EmailService {
 
     return await this.deliverEmail({
       to: email,
-      subject: `Reset your ClipFlow password (Code: ${otpCode})`,
+      subject: `Reset your password - ClipFlow`,
       html,
       text,
     });
   }
 
   /**
-   * Sends a feature-rich welcome email to new users introducing video editing tools.
+   * Sends a clean welcome email to new users.
    */
   public async sendWelcomeEmail(email: string, name?: string): Promise<boolean> {
     console.log('\n================== WELCOME EMAIL ==================');
@@ -196,7 +221,7 @@ class EmailService {
     const html = getWelcomeEmailHtml({
       name,
       email,
-      frontendUrl: FRONTEND_URL,
+      frontendUrl,
     });
 
     const text = getWelcomeEmailText({
