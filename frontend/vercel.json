@@ -56,6 +56,10 @@
   ],
   "rewrites": [
     {
+      "source": "/health",
+      "destination": "https://clipflow-qo0b.onrender.com/health"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://clipflow-qo0b.onrender.com/api/:path*"
     },

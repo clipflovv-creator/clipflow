@@ -101,6 +101,32 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health check endpoint for uptime monitors / Render / container health probes
+app.get(['/health', '/api/health'], (_req: Request, res: Response) => {
+  const stateMap: Record<number, string> = {
+    0: 'disconnected',
+    1: 'connected',
+    2: 'connecting',
+    3: 'disconnecting',
+  };
+  const dbStatus = stateMap[mongoose.connection.readyState] || 'unknown';
+
+  res.status(200).json({
+    status: 'ok',
+    service: 'clipflow-backend',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+    database: {
+      status: dbStatus,
+      readyState: mongoose.connection.readyState,
+    },
+    memory: {
+      rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+    },
+  });
+});
+
 // Primary API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/google', googleRoutes);
@@ -138,14 +164,6 @@ app.get(['/api/app/update-check', '/api/app/version'], (req: Request, res: Respo
     version: '1.0.0',
     downloadUrl: '/public/downloads/ClipFlowHelper.exe',
     changelog: 'Latest stable release',
-  });
-});
-
-app.get(['/health', '/api/health'], (_req, res) => {
-  res.json({
-    status: 'ok',
-    dbState: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString(),
   });
 });
 
