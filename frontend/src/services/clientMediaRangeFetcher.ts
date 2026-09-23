@@ -213,14 +213,15 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
     return f.url && f.vcodec && f.vcodec !== 'none' && f.acodec && f.acodec !== 'none';
   });
 
-  // Helper to check if format is H.264/AVC1 in MP4 (strictly exclude AV1 'av01' and VP9 which crash in WebAssembly FFmpeg)
+  // Check if format is H.264 (preferred for broadest compatibility)
   const isAvcMp4 = (f: any) => {
     if (!f || !f.vcodec || f.vcodec === 'none') return false;
     const vc = f.vcodec.toLowerCase();
-    if (vc.startsWith('av01') || vc.startsWith('av1')) return false; // Strictly ban AV1 in browser
-    if (vc.startsWith('vp09') || vc.startsWith('vp9')) return false;
-    return vc.startsWith('avc') || vc.startsWith('h264') || (f.ext === 'mp4' && !vc.startsWith('vp'));
+    return vc.startsWith('avc') || vc.startsWith('h264') || (f.ext === 'mp4' && !vc.startsWith('vp') && !vc.startsWith('av01'));
   };
+
+  // Accept any video codec (VP9, AV1, H.264) — FFmpeg.wasm handles all
+  const hasVideo = (f: any) => f?.url && f?.vcodec && f.vcodec !== 'none';
 
   // Find best matching video stream directly corresponding to requested CDN quality tier:
   const h264VideoOnly = videoOnly.filter(isAvcMp4);
@@ -252,7 +253,7 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
     }
   }
 
-  // Fallback to combined if no separate video (Twitter, Instagram, etc.)
+  // Fallback 1: combined formats (H.264 preferred, then any)
   if (!bestVideo && combined.length > 0) {
     const sortedCombined = [...combined].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
     bestVideo = sortedCombined.find((f) => getFormatHeight(f) === targetHeight && isAvcMp4(f)) ||
@@ -260,6 +261,18 @@ export function findBestTracks(metadata: any, targetQuality: string = '1080p'): 
                 sortedCombined.find((f) => getFormatHeight(f) <= targetHeight && isAvcMp4(f)) ||
                 sortedCombined.find((f) => getFormatHeight(f) <= targetHeight) ||
                 sortedCombined[0] || null;
+  }
+
+  // Fallback 2: VP9/AV1 video-only (FFmpeg.wasm supports these)
+  if (!bestVideo && videoOnly.length > 0) {
+    const sortedAll = [...videoOnly.filter(hasVideo)].sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+    bestVideo = sortedAll.find((f) => getFormatHeight(f) <= targetHeight) || sortedAll[0] || null;
+  }
+
+  // Fallback 3: Absolute last resort — any format with a video stream
+  if (!bestVideo) {
+    const anyVideo = formats.filter(hasVideo).sort((a, b) => getFormatHeight(b) - getFormatHeight(a));
+    bestVideo = anyVideo[0] || null;
   }
 
   // Find best matching audio stream (strongly prioritize original/default audio over dubs & prefer M4A / AAC)
