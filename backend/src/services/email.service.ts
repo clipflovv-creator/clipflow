@@ -3,8 +3,11 @@ import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import {
   getVerificationEmailHtml,
+  getVerificationEmailText,
   getPasswordResetEmailHtml,
+  getPasswordResetEmailText,
   getWelcomeEmailHtml,
+  getWelcomeEmailText,
 } from './email-templates.js';
 
 dotenv.config();
@@ -79,10 +82,9 @@ class EmailService {
     to: string;
     subject: string;
     html: string;
+    text?: string;
   }): Promise<boolean> {
-    this.ensureClients();
-    const { to, subject, html } = params;
-    const emailFrom = this.getEmailFrom();
+    const { to, subject, html, text } = params;
 
     // A. Attempt Resend API
     if (this.resend) {
@@ -92,10 +94,11 @@ class EmailService {
           to: [to],
           subject,
           html,
+          ...(text ? { text } : {}),
         });
 
         if (error) {
-          console.error('[EmailService:Resend Error]', error);
+          console.error('[EmailService:Resend Error]', JSON.stringify(error));
         } else {
           console.log(`[EmailService] Delivered via Resend to ${to} (ID: ${data?.id})`);
           return true;
@@ -115,6 +118,7 @@ class EmailService {
           to,
           subject,
           html,
+          ...(text ? { text } : {}),
         });
         console.log(`[EmailService] Delivered via SMTP fallback to: ${to}`);
         return true;
@@ -123,6 +127,7 @@ class EmailService {
       }
     }
 
+    console.error(`[EmailService] Failed to deliver email to: ${to}`);
     return false;
   }
 
@@ -135,7 +140,6 @@ class EmailService {
     rawToken?: string,
     name?: string
   ): Promise<boolean> {
-    const frontendUrl = this.getFrontendUrl();
     const verificationUrl = rawToken
       ? `${frontendUrl}/verify-email?token=${encodeURIComponent(rawToken)}`
       : `${frontendUrl}/verify-email?code=${encodeURIComponent(otpCode)}`;
@@ -153,10 +157,18 @@ class EmailService {
       frontendUrl,
     });
 
+    const text = getVerificationEmailText({
+      otpCode,
+      rawToken,
+      name,
+      frontendUrl: FRONTEND_URL,
+    });
+
     return await this.deliverEmail({
       to: email,
       subject: `Verify your email address - ClipFlow`,
       html,
+      text,
     });
   }
 
@@ -168,7 +180,6 @@ class EmailService {
     otpCode: string,
     rawToken?: string
   ): Promise<boolean> {
-    const frontendUrl = this.getFrontendUrl();
     const resetUrl = rawToken
       ? `${frontendUrl}/reset-password?token=${encodeURIComponent(rawToken)}`
       : `${frontendUrl}/reset-password?code=${encodeURIComponent(otpCode)}`;
@@ -185,10 +196,17 @@ class EmailService {
       frontendUrl,
     });
 
+    const text = getPasswordResetEmailText({
+      otpCode,
+      rawToken,
+      frontendUrl: FRONTEND_URL,
+    });
+
     return await this.deliverEmail({
       to: email,
       subject: `Reset your password - ClipFlow`,
       html,
+      text,
     });
   }
 
@@ -196,8 +214,6 @@ class EmailService {
    * Sends a clean welcome email to new users.
    */
   public async sendWelcomeEmail(email: string, name?: string): Promise<boolean> {
-    const frontendUrl = this.getFrontendUrl();
-
     console.log('\n================== WELCOME EMAIL ==================');
     console.log(`To: ${email} (Name: ${name || 'User'})`);
     console.log('===================================================\n');
@@ -208,10 +224,17 @@ class EmailService {
       frontendUrl,
     });
 
+    const text = getWelcomeEmailText({
+      name,
+      email,
+      frontendUrl: FRONTEND_URL,
+    });
+
     return await this.deliverEmail({
       to: email,
-      subject: `Welcome to ClipFlow`,
+      subject: `Welcome to ClipFlow Studio`,
       html,
+      text,
     });
   }
 }

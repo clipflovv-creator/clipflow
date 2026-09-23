@@ -7,11 +7,12 @@ import { useAuth } from '../context/AuthContext';
 export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { verifyEmail, resendVerification } = useAuth();
+  const { verifyEmail, verifyEmailWithCode, resendVerification } = useAuth();
 
-  const queryToken = searchParams.get('token') || '';
+  const queryToken = (searchParams.get('token') || searchParams.get('code') || '').trim();
+  const queryEmail = (searchParams.get('email') || '').trim();
   const [tokenInput, setTokenInput] = useState(queryToken);
-  const [emailInput, setEmailInput] = useState('');
+  const [emailInput, setEmailInput] = useState(queryEmail);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>(
     queryToken ? 'loading' : 'idle'
   );
@@ -19,14 +20,20 @@ export default function VerifyEmailPage() {
 
   useEffect(() => {
     if (queryToken) {
-      handleVerification(queryToken);
+      handleVerification(queryToken, queryEmail);
     }
-  }, [queryToken]);
+  }, [queryToken, queryEmail]);
 
-  const handleVerification = async (tokenToVerify: string) => {
+  const handleVerification = async (tokenToVerify: string, emailForCode?: string) => {
     setStatus('loading');
     setMessage('');
-    const res = await verifyEmail(tokenToVerify.trim());
+    
+    // If it's a 6-digit OTP code and email is available
+    const isNumericCode = /^\d{6}$/.test(tokenToVerify);
+    const res = isNumericCode && emailForCode
+      ? await verifyEmailWithCode(tokenToVerify, emailForCode)
+      : await verifyEmail(tokenToVerify.trim());
+
     if (res.success) {
       setStatus('success');
       setMessage(res.message || 'Email verified successfully! You now have full access.');
@@ -35,7 +42,7 @@ export default function VerifyEmailPage() {
       }, 2000);
     } else {
       setStatus('error');
-      setMessage(res.error || 'Verification failed. The link may have expired or is invalid.');
+      setMessage(res.error || 'Verification failed. The link or code may have expired or is invalid.');
     }
   };
 
