@@ -41,11 +41,7 @@ export class GoogleOAuthService {
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent', // Ensure refresh_token is returned
-      scope: [
-        'https://www.googleapis.com/auth/userinfo.profile',
-        'https://www.googleapis.com/auth/userinfo.email',
-        'https://www.googleapis.com/auth/drive.file', // Minimal scope for app-created files only
-      ],
+      scope: ['openid', 'email', 'profile'],
       state,
     });
 
@@ -164,7 +160,7 @@ export class GoogleOAuthService {
         encryptedAccessToken,
         ...(encryptedRefreshToken ? { encryptedRefreshToken } : {}),
         tokenExpiry,
-        scope: tokens.scope || 'https://www.googleapis.com/auth/drive.file',
+        scope: tokens.scope || 'openid email profile',
         isConnected: true,
       },
       { upsert: true, returnDocument: 'after' }

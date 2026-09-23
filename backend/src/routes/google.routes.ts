@@ -28,7 +28,7 @@ router.get(['/connect', '/'], optionalAuth, (req: AuthenticatedRequest, res: Res
     return res.redirect(url);
   } catch (err: any) {
     console.error('[Google Connect Error]', err.message);
-    return res.status(500).json({ error: 'Failed to generate Google Drive authorization URL' });
+    return res.status(500).json({ error: 'Failed to generate Google authorization URL' });
   }
 });
 
