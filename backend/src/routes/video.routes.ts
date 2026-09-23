@@ -530,6 +530,12 @@ router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Respons
 });
 
 router.post('/metadata', async (req: Request, res: Response) => {
+  const reqOrigin = req.headers.origin;
+  if (reqOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', reqOrigin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: 'Video URL is required' });
 
@@ -686,6 +692,12 @@ router.post('/metadata', async (req: Request, res: Response) => {
 
 // ─── /download (Direct Terminal Execution) ──────────────────────────────────
 router.post('/download', async (req: Request, res: Response) => {
+  const reqOrigin = req.headers.origin;
+  if (reqOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', reqOrigin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
   const { url, format = 'mp4', quality = '720p', trimStart = 0, trimEnd, audioBitrate = '192k', aspectRatio, fitMode = 'pad', cropPosition = 'center', cropBox, customFileName } = req.body;
 
   if (!url) return res.status(400).json({ error: 'url is required' });

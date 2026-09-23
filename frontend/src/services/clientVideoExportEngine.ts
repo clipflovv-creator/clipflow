@@ -9,6 +9,7 @@
 import { findBestTracks } from './clientMediaRangeFetcher';
 import { ClientFFmpegEngine } from './clientFFmpegEngine';
 import { api } from './api';
+import { getCachedMetadata, setCachedMetadata } from '../utils/metadataCache';
 
 export interface ClientExportOptions {
   metadata: any;
@@ -87,7 +88,7 @@ export class ClientVideoExportEngine {
     let currentMetadata = metadata;
     let tracks = findBestTracks(currentMetadata, quality);
 
-    // If formats are missing (e.g. from an earlier lightweight load or fallback), fetch full metadata from backend
+    // If formats are missing (e.g. from an earlier lightweight load or fallback), check cache then backend
     if (!tracks.videoFormat && !tracks.combinedFormat) {
       const pageUrl =
         explicitUrl ||
@@ -96,18 +97,29 @@ export class ClientVideoExportEngine {
         (currentMetadata?.id ? `https://www.youtube.com/watch?v=${currentMetadata.id}` : undefined);
 
       if (pageUrl) {
-        if (onProgress) onProgress('Preparing video...', 5);
-        try {
-          const res = await api.video.getMetadata(pageUrl);
-          if (res.ok) {
-            const freshMeta = await res.json();
-            if (freshMeta?.formats && freshMeta.formats.length > 0) {
-              currentMetadata = freshMeta;
-              tracks = findBestTracks(currentMetadata, quality);
+        // 1. Check local frontend metadata cache first
+        const localCached = getCachedMetadata(pageUrl);
+        if (localCached?.formats && localCached.formats.length > 0) {
+          currentMetadata = localCached;
+          tracks = findBestTracks(currentMetadata, quality);
+        }
+
+        // 2. If still missing, fetch full metadata from backend
+        if (!tracks.videoFormat && !tracks.combinedFormat) {
+          if (onProgress) onProgress('Preparing video streams...', 5);
+          try {
+            const res = await api.video.getMetadata(pageUrl);
+            if (res.ok) {
+              const freshMeta = await res.json();
+              if (freshMeta?.formats && freshMeta.formats.length > 0) {
+                setCachedMetadata(pageUrl, freshMeta);
+                currentMetadata = freshMeta;
+                tracks = findBestTracks(currentMetadata, quality);
+              }
             }
+          } catch (fetchErr) {
+            console.warn('[ClientVideoExportEngine] Stream metadata refresh failed:', fetchErr);
           }
-        } catch (fetchErr) {
-          console.warn('[ClientVideoExportEngine] Stream metadata refresh failed:', fetchErr);
         }
       }
     }
