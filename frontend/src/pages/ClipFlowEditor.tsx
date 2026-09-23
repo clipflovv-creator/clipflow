@@ -855,7 +855,7 @@ export default function ClipFlowEditor() {
       // 0. Dedicated Subtitle / Caption Export Pipeline (SRT, VTT, TXT)
       if (downloadFormat === 'captions') {
         setDownloadProgress(20);
-        setStatusMessage(`📝 Extracting and trimming ${captionFormat.toUpperCase()} subtitles...`);
+        setStatusMessage(`Processing ${captionFormat.toUpperCase()} subtitles...`);
         const res = await api.video.download({
           url: activeUrl,
           format: captionFormat,
@@ -889,7 +889,7 @@ export default function ClipFlowEditor() {
 
         setDownloadStatus('success');
         setDownloadProgress(100);
-        setStatusMessage(`🎉 ${data.message || `Subtitles (${captionFormat.toUpperCase()}) downloaded!`}`);
+        setStatusMessage(data.message || `Subtitles (${captionFormat.toUpperCase()}) downloaded successfully.`);
 
 
         setTimeout(() => {
@@ -914,7 +914,7 @@ export default function ClipFlowEditor() {
       // 1. Twitch Browser-Side Export Pipeline (with Quality Selection & Server Fallback)
       if (isTwitch && twitchHlsUrl) {
         setDownloadProgress(5);
-        setStatusMessage('⚡ Initializing browser video engine...');
+        setStatusMessage('Preparing video...');
 
         // Find exact variant URL matching downloadQuality (or audio_only for audio exports)
         let targetManifest = twitchHlsUrl;
@@ -955,7 +955,7 @@ export default function ClipFlowEditor() {
         } catch (browserTwitchErr: any) {
           console.warn('[Twitch Export] In-browser export failed, falling back to server export engine:', browserTwitchErr);
           setDownloadProgress(45);
-          setStatusMessage('⚡ In-browser render failed. Falling back to high-speed cloud renderer...');
+          setStatusMessage('Processing video in cloud...');
 
           const res = await api.video.download({
             url: activeUrl,
@@ -996,7 +996,7 @@ export default function ClipFlowEditor() {
 
         setDownloadStatus('success');
         setDownloadProgress(100);
-        setStatusMessage('Clip generated & downloaded directly to your computer!');
+        setStatusMessage('Clip downloaded successfully!');
         setTimeout(() => {
           setStatusMessage('');
           setDownloadStatus('idle');
@@ -1016,7 +1016,7 @@ export default function ClipFlowEditor() {
 
       // 2. Client-Side FFmpeg In-Browser Export (YouTube, Instagram, Twitter, etc.) with Automatic Cloud Fallback
       setDownloadProgress(5);
-      setStatusMessage('🚀 Initializing in-browser render engine...');
+      setStatusMessage('Preparing clip...');
 
       try {
         const exportResult = await ClientVideoExportEngine.exportClip({
@@ -1047,8 +1047,8 @@ export default function ClipFlowEditor() {
         setDownloadStatus('success');
         setDownloadProgress(100);
         const successMessage = exportResult.qualityNote
-          ? `🎉 Downloaded! (${exportResult.qualityNote})`
-          : '🎉 Clip processed and downloaded directly to your device!';
+          ? `Downloaded successfully (${exportResult.qualityNote})`
+          : 'Clip downloaded successfully!';
         setStatusMessage(successMessage);
 
         setTimeout(() => {
@@ -1069,7 +1069,7 @@ export default function ClipFlowEditor() {
       } catch (browserExportErr: any) {
         console.warn('[ClipFlow Editor] In-browser export engine encountered error, falling back to high-speed cloud renderer:', browserExportErr);
         setDownloadProgress(40);
-        setStatusMessage('⚡ In-browser render unavailable. Switching to high-speed cloud renderer...');
+        setStatusMessage('Processing video in cloud...');
 
         try {
           const res = await api.video.download({
@@ -1093,7 +1093,7 @@ export default function ClipFlowEditor() {
           }
 
           setDownloadProgress(85);
-          setStatusMessage('⬇️ Downloading your processed clip...');
+          setStatusMessage('Downloading clip...');
           const data = await res.json();
           if (data.downloadUrl) {
             const fileRes = await api.video.fetchFile(data.downloadUrl);
@@ -1111,7 +1111,7 @@ export default function ClipFlowEditor() {
 
           setDownloadStatus('success');
           setDownloadProgress(100);
-          setStatusMessage('🎉 Clip processed and downloaded successfully via cloud engine!');
+          setStatusMessage('Clip downloaded successfully!');
 
           setTimeout(() => {
             setStatusMessage('');
@@ -1133,7 +1133,7 @@ export default function ClipFlowEditor() {
           const errMsg = serverFallbackErr?.message || browserExportErr?.message || 'Export failed';
           setDownloadStatus('error');
           setDownloadProgress(0);
-          setStatusMessage(`❌ Export error: ${errMsg}`);
+          setStatusMessage(`Export error: ${errMsg}`);
           setTimeout(() => {
             setStatusMessage('');
             setDownloadStatus('idle');
@@ -1144,7 +1144,7 @@ export default function ClipFlowEditor() {
 
       setDownloadStatus('success');
       setDownloadProgress(100);
-      setStatusMessage('🎉 Clip processed and downloaded successfully!');
+      setStatusMessage('Clip downloaded successfully!');
 
       setTimeout(() => {
         setStatusMessage('');

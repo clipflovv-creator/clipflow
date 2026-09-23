@@ -96,7 +96,7 @@ export class ClientVideoExportEngine {
         (currentMetadata?.id ? `https://www.youtube.com/watch?v=${currentMetadata.id}` : undefined);
 
       if (pageUrl) {
-        if (onProgress) onProgress('🔍 Retrieving high-resolution video streams...', 5);
+        if (onProgress) onProgress('Preparing video...', 5);
         try {
           const res = await api.video.getMetadata(pageUrl);
           if (res.ok) {
@@ -113,7 +113,7 @@ export class ClientVideoExportEngine {
     }
 
     if (tracks.qualityNote) {
-      if (onProgress) onProgress(`ℹ️ ${tracks.qualityNote}`, 8);
+      if (onProgress) onProgress(tracks.qualityNote, 8);
     }
 
     const videoStreamUrl = tracks.videoFormat?.url || tracks.combinedFormat?.url || currentMetadata?.direct_stream_url;
@@ -132,7 +132,7 @@ export class ClientVideoExportEngine {
       audioStreamUrl = null;
     }
 
-    if (onProgress) onProgress('🚀 Initializing in-browser FFmpeg engine...', 5);
+    if (onProgress) onProgress('Preparing video engine...', 10);
 
     const isAudioOnly = format === 'mp3' || format === 'wav' || format === 'm4a';
     const effectiveFormat = isAudioOnly ? format : 'mp4';
@@ -163,7 +163,7 @@ export class ClientVideoExportEngine {
 
     const downloadUrl = URL.createObjectURL(result.blob);
 
-    if (onProgress) onProgress('✅ Complete! Downloading your clip...', 100);
+    if (onProgress) onProgress('Downloading clip...', 100);
 
     // Automatically trigger native browser download
     triggerBrowserDownload(result.blob, finalFileName);

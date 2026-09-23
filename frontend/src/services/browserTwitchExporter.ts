@@ -67,7 +67,7 @@ export async function exportTwitchClipInBrowser(
     onProgress,
   } = options;
 
-  if (onProgress) onProgress('Analyzing Twitch stream timeline...', 5);
+  if (onProgress) onProgress('Preparing video...', 5);
 
   // ── Step 1: Selectively fetch ONLY the required HLS .ts segments ──────────────
   const segmentResult = await fetchRequiredHlsSegments(
@@ -86,7 +86,7 @@ export async function exportTwitchClipInBrowser(
   const cleanTitle = (customFileName || 'Twitch_Clip').replace(/[/\\?%*:|"<>]/g, '_').trim();
   const outputFileName = `${cleanTitle}.${cleanExt}`;
 
-  if (onProgress) onProgress('Starting video editing engine...', 46);
+  if (onProgress) onProgress('Processing video...', 46);
 
   // ── Step 2: Spawn dedicated FFmpeg Web Worker ─────────────────────────────────
   const worker = new Worker(
@@ -111,7 +111,7 @@ export async function exportTwitchClipInBrowser(
         if (onProgress) onProgress(message || 'Processing clip...', percent || 50);
       } else if (type === 'COMPLETE' || type === 'DONE') {
         hasResolved = true;
-        if (onProgress) onProgress('Complete! Preparing download...', 100);
+        if (onProgress) onProgress('Downloading clip...', 100);
 
         const rawData = outputData || e.data?.payload?.outputData;
         if (!rawData) {

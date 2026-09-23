@@ -197,7 +197,7 @@ self.onmessage = async (e: MessageEvent) => {
           type: 'PROGRESS',
           jobId,
           percent: percent || 65,
-          message: `Encoding & trimming video (${percent || 65}%)...`,
+          message: `Rendering video (${percent || 65}%)...`,
         });
       };
 
@@ -251,7 +251,7 @@ self.onmessage = async (e: MessageEvent) => {
           type: 'PROGRESS',
           jobId,
           percent: 60,
-          message: 'Fast muxing trimmed clip (lossless stream copy)...',
+          message: 'Processing clip...',
         });
         const fastCopyArgs = [
           '-err_detect', 'ignore_err',
@@ -274,7 +274,7 @@ self.onmessage = async (e: MessageEvent) => {
             type: 'PROGRESS',
             jobId,
             percent: 95,
-            message: 'Finalizing clip file...',
+            message: 'Finalizing clip...',
           });
           const outputData = (await instance.readFile(internalOutput)) as Uint8Array;
           try {
@@ -301,7 +301,7 @@ self.onmessage = async (e: MessageEvent) => {
         type: 'PROGRESS',
         jobId,
         percent: 60,
-        message: isAudio ? 'Extracting audio track...' : 'Rendering clip in browser...',
+        message: isAudio ? 'Processing audio...' : 'Rendering video...',
       });
 
       const exitCode = await instance.exec(args);
@@ -315,7 +315,7 @@ self.onmessage = async (e: MessageEvent) => {
         type: 'PROGRESS',
         jobId,
         percent: 94,
-        message: 'Finalizing clip file...',
+        message: 'Finalizing clip...',
       });
 
       // Read output file from virtual FS

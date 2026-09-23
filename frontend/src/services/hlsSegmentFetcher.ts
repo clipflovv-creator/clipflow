@@ -229,7 +229,7 @@ export async function fetchRequiredHlsSegments(
       segmentsLoaded: 0,
       segmentsTotal: 0,
       percent: 5,
-      message: 'Analyzing video stream timeline...',
+      message: 'Preparing video...',
     });
   }
 
@@ -321,13 +321,12 @@ export async function fetchRequiredHlsSegments(
 
     if (onProgress) {
       const percent = Math.min(45, Math.round(5 + (loadedCount / totalSegments) * 40));
-      const mbLoaded = (totalBytes / (1024 * 1024)).toFixed(1);
       onProgress({
         phase: 'segments',
         segmentsLoaded: loadedCount,
         segmentsTotal: totalSegments,
         percent,
-        message: `Downloading required video media (${loadedCount}/${totalSegments} segments, ${mbLoaded} MB)...`,
+        message: `Downloading media (${Math.round((loadedCount / totalSegments) * 100)}%)...`,
       });
     }
   };

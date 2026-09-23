@@ -53,7 +53,7 @@ export async function getFFmpeg(onProgress?: (stage: string, percent: number) =>
   }
 
   loadPromise = (async () => {
-    if (onProgress) onProgress('⚡ Loading in-browser FFmpeg engine...', 5);
+    if (onProgress) onProgress('Preparing video engine...', 10);
 
     // 1. Try unpkg CDN
     const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
@@ -454,12 +454,12 @@ export class ClientFFmpegEngine {
       const sourceUrl = audioUrl || videoUrl;
       if (!sourceUrl) throw new Error('No audio stream URL available.');
 
-      if (onProgress) onProgress('🎵 Streaming audio via Edge Relay...', 20);
+      if (onProgress) onProgress('Preparing audio...', 20);
       const audioSlice = await fetchSmartMediaStream(sourceUrl, trimStart, effectiveTrimEnd, 20_000, (pct) => {
-        if (onProgress) onProgress(`🎵 Downloading audio (${pct}%)...`, 20 + Math.round(pct * 0.45));
+        if (onProgress) onProgress(`Downloading audio (${pct}%)...`, 20 + Math.round(pct * 0.45));
       });
 
-      if (onProgress) onProgress('⚡ Slicing audio clip in FFmpeg...', 70);
+      if (onProgress) onProgress('Processing audio...', 70);
       await ffmpeg.writeFile('input_a.m4a', audioSlice.bytes);
 
       const outExt = format === 'mp3' ? 'wav' : format;
@@ -499,13 +499,14 @@ export class ClientFFmpegEngine {
     // ── 2. VIDEO + AUDIO EXPORT ───────────────────────────────────────────────
     if (!videoUrl) throw new Error('No video stream URL provided.');
 
-    if (onProgress) onProgress('⬇️ Streaming media streams in parallel...', 15);
+    if (onProgress) onProgress('Downloading media...', 15);
 
     let videoPct = 0;
     let audioPct = 0;
     const updateCombinedProgress = () => {
       const combined = Math.round(15 + (videoPct * 0.45) + (audioPct * 0.15));
-      if (onProgress) onProgress(`⬇️ Downloading media: Video ${videoPct}% | Audio ${audioPct}%...`, combined);
+      const avg = Math.round(audioUrl ? (videoPct + audioPct) / 2 : videoPct);
+      if (onProgress) onProgress(`Downloading media (${avg}%)...`, combined);
     };
 
     // Download video and audio concurrently using intelligent sidx ranged slices
@@ -520,7 +521,7 @@ export class ClientFFmpegEngine {
       }) : Promise.resolve(null),
     ]);
 
-    if (onProgress) onProgress('⚡ Slicing and muxing video + audio in FFmpeg...', 78);
+    if (onProgress) onProgress('Processing clip...', 78);
 
     await ffmpeg.writeFile('input_v.mp4', videoSlice.bytes);
     if (audioSlice) {
@@ -538,7 +539,7 @@ export class ClientFFmpegEngine {
     // When no aspect ratio crop is required, perform ultrafast lossless stream copy
     // without re-encoding video frames, taking <0.5s and using zero CPU / WASM memory.
     if (!videoFilter) {
-      if (onProgress) onProgress('⚡ Fast muxing trimmed clip (lossless stream copy)...', 85);
+      if (onProgress) onProgress('Processing clip...', 85);
       const copyArgs: string[] = [
         '-y',
         '-ss', vRelativeStart.toFixed(3),
@@ -570,7 +571,7 @@ export class ClientFFmpegEngine {
     }
 
     // Frame-accurate transcode with universal H.264 (yuv420p) and synchronized AAC audio
-    if (onProgress) onProgress('✂️ Rendering cropped video with FFmpeg...', 85);
+    if (onProgress) onProgress('Rendering video...', 85);
     const args: string[] = [
       '-y',
       '-ss', vRelativeStart.toFixed(3),
@@ -618,7 +619,7 @@ export class ClientFFmpegEngine {
       }
     }
 
-    if (onProgress) onProgress('📦 Extracting finished clip from engine...', 95);
+    if (onProgress) onProgress('Finalizing clip...', 95);
     const outputData = await ffmpeg.readFile(outName) as Uint8Array;
 
     // Clean up MEMFS files to keep browser memory lightweight

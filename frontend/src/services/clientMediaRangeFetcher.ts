@@ -406,7 +406,7 @@ export async function extractAudioRangeSamples(
   if (!audioStreamUrl) return null;
 
   try {
-    if (onProgress) onProgress('🎵 Inspecting audio stream header via Range request...', 10);
+    if (onProgress) onProgress('Preparing audio...', 10);
 
     const mp4boxfile = MP4Box.createFile();
     let audioTrackId: number | null = null;
@@ -496,10 +496,9 @@ export async function extractAudioRangeSamples(
 
     const startByte = firstSample.offset;
     const endByte = lastSample.offset + lastSample.size - 1;
-    const sliceByteCount = endByte - startByte + 1;
 
     if (onProgress) {
-      onProgress(`🎵 Downloading requested audio clip slice (${Math.round(sliceByteCount / 1024)} KB)...`, 20);
+      onProgress('Downloading audio...', 20);
     }
 
     // Step 3: Fetch ONLY the requested sample range bytes
