@@ -122,7 +122,7 @@ router.get(['/callback', '/auth/callback'], async (req: Request, res: Response) 
 
     console.log(`[Google OAuth] User authenticated${isNewUser ? ' (new user)' : ''}: ${user.email}`);
 
-    return res.redirect(`${FRONTEND_URL}/editor/storage?auth_status=success&connected=true`);
+    return res.redirect(`${FRONTEND_URL}/?auth_status=success&connected=true`);
   } catch (err: any) {
     console.error('[Google Callback Exception]', err.message);
     return res.redirect(`${FRONTEND_URL}/login?auth_error=${encodeURIComponent(err.message)}`);

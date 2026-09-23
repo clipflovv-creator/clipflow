@@ -37,7 +37,7 @@ export default function LoginPage() {
   };
 
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>(getInitialMode);
-  const returnTo = searchParams.get('returnTo') || '/storage';
+  const returnTo = searchParams.get('returnTo') || '/';
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');

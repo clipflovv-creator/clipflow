@@ -9,19 +9,19 @@ import crypto from 'crypto';
 
 dotenv.config();
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/auth/google/callback';
-
 export class GoogleOAuthService {
   /**
    * Builds an OAuth2 client instance.
    */
   public static getOAuth2Client() {
-    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/auth/google/callback';
+
+    if (!clientId || !clientSecret) {
       console.warn('[GoogleOAuthService] Warning: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing!');
     }
-    return new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
+    return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   }
 
   /**

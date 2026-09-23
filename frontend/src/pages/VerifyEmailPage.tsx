@@ -38,7 +38,7 @@ export default function VerifyEmailPage() {
       setStatus('success');
       setMessage(res.message || 'Email verified successfully! You now have full access.');
       setTimeout(() => {
-        navigate('/storage');
+        navigate('/');
       }, 2000);
     } else {
       setStatus('error');
