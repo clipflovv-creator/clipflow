@@ -158,7 +158,10 @@ export class AuthService {
       const normalizedEmail = email.toLowerCase().trim();
       const user = await UserModel.findOne({ email: normalizedEmail });
       if (user) {
-        record = await EmailVerificationTokenModel.findOne({ userId: user._id });
+        record = await EmailVerificationTokenModel.findOne({
+          userId: user._id,
+          $or: [{ tokenHash }, { tokenHash: raw }],
+        });
       }
     }
 
@@ -184,7 +187,7 @@ export class AuthService {
     await EmailVerificationTokenModel.deleteMany({ userId: user._id });
 
     // Send Welcome Email now that account is verified
-    await emailService.sendWelcomeEmail(user.email, user.name).catch((err) => {
+    emailService.sendWelcomeEmail(user.email, user.name).catch((err) => {
       console.warn('[Auth] Welcome email error:', err.message);
     });
 
