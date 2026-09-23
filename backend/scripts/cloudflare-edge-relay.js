@@ -14,12 +14,14 @@
 
 export default {
   async fetch(request, env, ctx) {
+    const origin = request.headers.get('Origin') || '*';
+
     // 1. Handle CORS Preflight OPTIONS
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
         headers: {
-          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Origin': origin,
           'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
           'Access-Control-Allow-Headers': 'Range, Content-Type, Accept, Authorization, X-Requested-With',
           'Access-Control-Max-Age': '86400',
@@ -29,8 +31,6 @@ export default {
 
     const requestUrl = new URL(request.url);
     let targetUrl = requestUrl.searchParams.get('url');
-
-    const origin = request.headers.get('Origin') || '*';
 
     if (!targetUrl) {
       return new Response(JSON.stringify({ error: 'Missing "url" query parameter' }), {
