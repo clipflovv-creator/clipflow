@@ -1,0 +1,12 @@
+# ClipFlow by cliy robots.txt
+User-agent: *
+Allow: /
+Disallow: /storage
+Disallow: /editor/storage
+Disallow: /cloud-storage
+Disallow: /settings
+Disallow: /editor/settings
+Disallow: /reset-password
+Disallow: /verify-email
+
+Sitemap: https://clipflow.cliy.me/sitemap.xml
