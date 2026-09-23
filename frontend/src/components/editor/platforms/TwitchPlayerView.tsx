@@ -74,15 +74,7 @@ export function TwitchPlayerView({
         loader: ProxyHlsLoader as any,
       });
 
-      console.log('%c[ClipFlow 📺 TWITCH HLS ATTACH]', 'color: #a855f7; font-weight: bold;', {
-        twitchHlsUrl,
-      });
-
-      hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
-        console.log('%c[ClipFlow 📺 TWITCH HLS MANIFEST PARSED]', 'color: #22c55e; font-weight: bold;', {
-          levels: data.levels?.length,
-          firstLevel: data.firstLevel,
-        });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
         setIsVideoBuffering(false);
         if (!currentTime || currentTime === 0) {
           video.currentTime = 0;

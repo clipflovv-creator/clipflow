@@ -48,7 +48,6 @@ async function loadFFmpeg() {
     f.on('log', ({ message }) => {
       logHistory.push(message);
       if (logHistory.length > 100) logHistory.shift();
-      console.log(`[FFmpeg.wasm Worker] ${message}`);
     });
     return f;
   };
@@ -58,13 +57,11 @@ async function loadFFmpeg() {
   // Load single-threaded FFmpeg wasm core from unpkg CDN
   const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
   try {
-    console.log('[FFmpeg.wasm Worker] Loading core from CDN:', baseURL);
     await ffmpeg.load({
       coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
       wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
     });
     isLoaded = true;
-    console.log('[FFmpeg.wasm Worker ✅] Loaded successfully from CDN');
     return ffmpeg;
   } catch (cdnErr: any) {
     console.warn('[FFmpeg.wasm Worker ⚠️] Primary CDN load failed, falling back to jsdelivr:', cdnErr?.message || cdnErr);
@@ -77,7 +74,6 @@ async function loadFFmpeg() {
       wasmURL: await toBlobURL(`${fallbackURL}/ffmpeg-core.wasm`, 'application/wasm'),
     });
     isLoaded = true;
-    console.log('[FFmpeg.wasm Worker ✅] Loaded successfully from backup CDN');
     return ffmpeg;
   }
 }
@@ -272,10 +268,8 @@ self.onmessage = async (e: MessageEvent) => {
           '-movflags', '+faststart',
           internalOutput,
         ];
-        console.log(`[FFmpeg.wasm Worker 🚀] Executing fast stream copy args:\n${fastCopyArgs.join(' ')}`);
         const copyCode = await instance.exec(fastCopyArgs);
         if (copyCode === 0) {
-          console.log('[FFmpeg.wasm Worker] ✅ Fast stream copy succeeded in milliseconds!');
           self.postMessage({
             type: 'PROGRESS',
             jobId,
@@ -302,8 +296,6 @@ self.onmessage = async (e: MessageEvent) => {
         console.warn('[FFmpeg.wasm Worker] Fast copy returned non-zero code', copyCode, '- falling back to transcode');
         try { await instance.deleteFile(internalOutput); } catch {}
       }
-
-      console.log(`[FFmpeg.wasm Worker 🚀] Executing transcode args:\n${args.join(' ')}`);
 
       self.postMessage({
         type: 'PROGRESS',

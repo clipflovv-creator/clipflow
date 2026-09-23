@@ -38,6 +38,7 @@ interface EditorExportPanelProps {
   setCustomFileName: (name: string) => void;
   statusMessage: string;
   downloadStatus: 'idle' | 'running' | 'success' | 'error';
+  downloadProgress?: number;
   isDownloading: boolean;
   handleExportDownload: () => Promise<void>;
   exportMode?: 'free' | 'pro';
@@ -95,6 +96,7 @@ export function EditorExportPanel({
   setCustomFileName,
   statusMessage,
   downloadStatus,
+  downloadProgress = 0,
   isDownloading,
   handleExportDownload,
   exportMode: _exportMode,
@@ -421,30 +423,52 @@ export function EditorExportPanel({
         </div>
       </div>
 
-      {/* ── Sticky Export Button ── */}
+      {/* ── Sticky Export Button & Progress ── */}
       <div className="border-t border-white/[0.06] p-4 space-y-2.5 shrink-0 bg-[#080808]">
-        {statusMessage && (
+        {(isDownloading || downloadStatus === 'running' || statusMessage) && (
           <motion.div
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
-            className={`px-3 py-2 rounded-lg text-[11px] flex items-center justify-between gap-2 border ${
+            className={`p-3 rounded-xl border text-xs flex flex-col gap-2 transition-all ${
               downloadStatus === 'success'
                 ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
                 : downloadStatus === 'error'
                   ? 'bg-red-500/10 border-red-500/25 text-red-300'
-                  : 'bg-blue-500/10 border-blue-500/25 text-blue-300'
+                  : 'bg-white/[0.04] border-white/10 text-zinc-200'
             }`}
           >
-            <div className="flex items-center gap-2 min-w-0">
-              {downloadStatus === 'success' ? (
-                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              ) : downloadStatus === 'error' ? (
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+            {/* Header: Status Message & Percentage */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                {downloadStatus === 'success' ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                ) : downloadStatus === 'error' ? (
+                  <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                ) : (
+                  <RefreshCw className="w-3.5 h-3.5 text-sky-400 animate-spin shrink-0" />
+                )}
+                <span className="truncate text-[11px] font-medium leading-tight">
+                  {statusMessage || 'Preparing clip...'}
+                </span>
+              </div>
+              {(isDownloading || downloadStatus === 'running') && (
+                <span className="font-mono text-xs font-bold text-sky-400 tabular-nums shrink-0">
+                  {Math.round(downloadProgress)}%
+                </span>
               )}
-              <span className="truncate">{statusMessage}</span>
             </div>
+
+            {/* Clean Progress Bar Track */}
+            {(isDownloading || downloadStatus === 'running') && (
+              <div className="w-full bg-white/[0.08] rounded-full h-1.5 overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-blue-500 via-sky-400 to-cyan-300 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, Math.max(0, downloadProgress))}%` }}
+                  transition={{ ease: 'easeOut', duration: 0.25 }}
+                />
+              </div>
+            )}
           </motion.div>
         )}
 
@@ -460,7 +484,7 @@ export function EditorExportPanel({
                 transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
                 className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
               />
-              <span>Downloading clip...</span>
+              <span>Exporting clip ({Math.round(downloadProgress)}%)...</span>
             </>
           ) : (
             <>

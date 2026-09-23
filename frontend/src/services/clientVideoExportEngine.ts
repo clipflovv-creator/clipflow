@@ -106,7 +106,6 @@ export class ClientVideoExportEngine {
     }
 
     if (tracks.qualityNote) {
-      console.log('[ClientVideoExportEngine] ℹ️ Quality selection note:', tracks.qualityNote);
       if (onProgress) onProgress(`ℹ️ ${tracks.qualityNote}`, 8);
     }
 

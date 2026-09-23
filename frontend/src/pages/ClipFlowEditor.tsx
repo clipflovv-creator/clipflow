@@ -289,6 +289,7 @@ export default function ClipFlowEditor() {
   // Download & Status
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+  const [downloadProgress, setDownloadProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
 
   // Quality menu & selected quality state
@@ -843,6 +844,7 @@ export default function ClipFlowEditor() {
 
     setIsDownloading(true);
     setDownloadStatus('running');
+    setDownloadProgress(0);
     setStatusMessage('Preparing clip export...');
 
     try {
@@ -852,6 +854,7 @@ export default function ClipFlowEditor() {
 
       // 0. Dedicated Subtitle / Caption Export Pipeline (SRT, VTT, TXT)
       if (downloadFormat === 'captions') {
+        setDownloadProgress(20);
         setStatusMessage(`📝 Extracting and trimming ${captionFormat.toUpperCase()} subtitles...`);
         const res = await api.video.download({
           url: activeUrl,
@@ -869,6 +872,7 @@ export default function ClipFlowEditor() {
           throw new Error(errData.error || 'Failed to fetch subtitles for this video');
         }
 
+        setDownloadProgress(75);
         const data = await res.json();
         const fileRes = await api.video.fetchFile(data.downloadUrl);
         if (!fileRes.ok) throw new Error('Failed to retrieve generated subtitle file from server');
@@ -884,12 +888,14 @@ export default function ClipFlowEditor() {
         setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 
         setDownloadStatus('success');
+        setDownloadProgress(100);
         setStatusMessage(`🎉 ${data.message || `Subtitles (${captionFormat.toUpperCase()}) downloaded!`}`);
 
 
         setTimeout(() => {
           setStatusMessage('');
           setDownloadStatus('idle');
+          setDownloadProgress(0);
         }, 3000);
 
         saveToHistory({
@@ -907,6 +913,7 @@ export default function ClipFlowEditor() {
 
       // 1. Twitch Browser-Side Export Pipeline (with Quality Selection & Server Fallback)
       if (isTwitch && twitchHlsUrl) {
+        setDownloadProgress(5);
         setStatusMessage('⚡ Initializing browser video engine...');
 
         // Find exact variant URL matching downloadQuality (or audio_only for audio exports)
@@ -916,14 +923,12 @@ export default function ClipFlowEditor() {
           const audioTier = twitchQualities.find((q) => q.id === 'audio_only');
           if (audioTier) {
             targetManifest = audioTier.proxiedUrl || audioTier.url;
-            console.log('[Twitch Export] Using audio_only stream variant for fast audio export:', targetManifest);
           }
         } else if (downloadQuality) {
           const cleanQ = downloadQuality.toLowerCase().replace(/[^\d]/g, '');
           const matchTier = twitchQualities.find((q) => q.id === downloadQuality || (cleanQ && q.height === Number(cleanQ)));
           if (matchTier) {
             targetManifest = matchTier.proxiedUrl || matchTier.url;
-            console.log(`[Twitch Export] Using quality-matched stream variant (${downloadQuality}):`, targetManifest);
           }
         }
 
@@ -940,10 +945,16 @@ export default function ClipFlowEditor() {
             cropPosition: cropPosition,
             cropBox: (aspectRatio === 'custom' || fitMode === 'crop') ? cropBox : undefined,
             audioBitrate: downloadAudioBitrate,
-            onProgress: (msg) => setStatusMessage(msg),
+            onProgress: (msg, pct) => {
+              setStatusMessage(msg);
+              if (typeof pct === 'number') {
+                setDownloadProgress(Math.min(100, Math.max(0, Math.round(pct))));
+              }
+            },
           });
         } catch (browserTwitchErr: any) {
           console.warn('[Twitch Export] In-browser export failed, falling back to server export engine:', browserTwitchErr);
+          setDownloadProgress(45);
           setStatusMessage('⚡ In-browser render failed. Falling back to high-speed cloud renderer...');
 
           const res = await api.video.download({
@@ -966,6 +977,7 @@ export default function ClipFlowEditor() {
             throw new Error(errData.error || `Server export failed (${res.status})`);
           }
 
+          setDownloadProgress(85);
           const data = await res.json();
           if (data.downloadUrl) {
             const fileRes = await api.video.fetchFile(data.downloadUrl);
@@ -983,10 +995,12 @@ export default function ClipFlowEditor() {
         }
 
         setDownloadStatus('success');
+        setDownloadProgress(100);
         setStatusMessage('Clip generated & downloaded directly to your computer!');
         setTimeout(() => {
           setStatusMessage('');
           setDownloadStatus('idle');
+          setDownloadProgress(0);
         }, 2500);
 
         saveToHistory({
@@ -1001,6 +1015,7 @@ export default function ClipFlowEditor() {
       }
 
       // 2. Client-Side FFmpeg In-Browser Export (YouTube, Instagram, Twitter, etc.) with Automatic Cloud Fallback
+      setDownloadProgress(5);
       setStatusMessage('🚀 Initializing in-browser render engine...');
 
       try {
@@ -1016,11 +1031,16 @@ export default function ClipFlowEditor() {
           fitMode: fitMode,
           cropPosition: cropPosition,
           customFileName: customFileName || metadata?.title || 'ClipFlow_Video',
-          onProgress: (phase) => setStatusMessage(phase),
+          onProgress: (phase, pct) => {
+            setStatusMessage(phase);
+            if (typeof pct === 'number') {
+              setDownloadProgress(Math.min(100, Math.max(0, Math.round(pct))));
+            }
+          },
         });
 
-        console.log('[ClipFlow Studio EXPORT SUCCESS]', exportResult);
         setDownloadStatus('success');
+        setDownloadProgress(100);
         const successMessage = exportResult.qualityNote
           ? `🎉 Downloaded! (${exportResult.qualityNote})`
           : '🎉 Clip processed and downloaded directly to your device!';
@@ -1029,6 +1049,7 @@ export default function ClipFlowEditor() {
         setTimeout(() => {
           setStatusMessage('');
           setDownloadStatus('idle');
+          setDownloadProgress(0);
         }, exportResult.qualityNote ? 5000 : 3000);
 
         saveToHistory({
@@ -1043,19 +1064,24 @@ export default function ClipFlowEditor() {
       } catch (browserExportErr: any) {
         console.warn('[ClipFlow Editor] In-browser export engine encountered error:', browserExportErr);
         const errMsg = browserExportErr?.message || 'In-browser render failed';
-        setDownloadStatus('idle');
+        setDownloadStatus('error');
+        setDownloadProgress(0);
         setStatusMessage(`❌ Export error: ${errMsg}`);
-        setTimeout(() => setStatusMessage(''), 6000);
+        setTimeout(() => {
+          setStatusMessage('');
+          setDownloadStatus('idle');
+        }, 6000);
         return;
       }
 
       setDownloadStatus('success');
+      setDownloadProgress(100);
       setStatusMessage('🎉 Clip processed and downloaded successfully!');
-
 
       setTimeout(() => {
         setStatusMessage('');
         setDownloadStatus('idle');
+        setDownloadProgress(0);
       }, 3000);
 
       saveToHistory({
@@ -1071,6 +1097,7 @@ export default function ClipFlowEditor() {
     } catch (err: any) {
       console.error('[Download Error]', err);
       setDownloadStatus('error');
+      setDownloadProgress(0);
       setStatusMessage(err.message || 'Download failed');
     } finally {
       setIsDownloading(false);
@@ -1341,6 +1368,7 @@ export default function ClipFlowEditor() {
               setCustomFileName={setCustomFileName}
               statusMessage={statusMessage}
               downloadStatus={downloadStatus}
+              downloadProgress={downloadProgress}
               isDownloading={isDownloading}
               handleExportDownload={handleExportDownload}
               exportMode={exportMode}
@@ -1397,6 +1425,7 @@ export default function ClipFlowEditor() {
         setCustomFileName={setCustomFileName}
         statusMessage={statusMessage}
         downloadStatus={downloadStatus}
+        downloadProgress={downloadProgress}
         isDownloading={isDownloading}
         handleExportDownload={handleExportDownload}
         exportDuration={exportDuration}

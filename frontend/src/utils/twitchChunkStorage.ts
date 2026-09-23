@@ -118,7 +118,6 @@ export async function saveTwitchChunkToStorage(
       const store = tx.objectStore(STORE_CHUNKS);
       store.put(record);
       tx.oncomplete = () => {
-        console.log(`%c[Twitch Storage 💾] Stored chunk @ t=${offset}s (${(blob.size / 1024).toFixed(1)} KB)`, 'color: #10b981;');
         resolve();
       };
       tx.onerror = () => {

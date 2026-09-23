@@ -15,6 +15,7 @@ interface EditorMobileSheetProps {
   setCustomFileName: (name: string) => void;
   statusMessage: string;
   downloadStatus: 'idle' | 'running' | 'success' | 'error';
+  downloadProgress?: number;
   isDownloading: boolean;
   handleExportDownload: () => Promise<void>;
   exportDuration: number;
@@ -47,6 +48,7 @@ export const EditorMobileSheet: React.FC<EditorMobileSheetProps> = ({
   setCustomFileName,
   statusMessage,
   downloadStatus,
+  downloadProgress = 0,
   isDownloading,
   handleExportDownload,
   exportDuration,
@@ -130,19 +132,43 @@ export const EditorMobileSheet: React.FC<EditorMobileSheetProps> = ({
                 </div>
               </div>
 
-              {/* Status indicator */}
-              {statusMessage && (
-                <div className={`p-3 rounded-xl border flex items-start gap-2 text-xs ${
-                  downloadStatus === 'running'
-                    ? 'bg-blue-500/10 border-blue-500/20 text-blue-300'
+              {/* Status indicator & Progress Bar */}
+              {(isDownloading || downloadStatus === 'running' || statusMessage) && (
+                <div className={`p-3 rounded-xl border flex flex-col gap-2 text-xs transition-all ${
+                  downloadStatus === 'running' || isDownloading
+                    ? 'bg-zinc-900/90 border-white/10 text-zinc-200'
                     : downloadStatus === 'error'
                       ? 'bg-red-500/10 border-red-500/20 text-red-300'
                       : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
                 }`}>
-                  {downloadStatus === 'running' && <Loader2 className="w-3.5 h-3.5 animate-spin mt-0.5 shrink-0" />}
-                  {downloadStatus === 'error' && <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
-                  {downloadStatus === 'success' && <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
-                  <span className="leading-tight">{statusMessage}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {downloadStatus === 'running' || isDownloading ? (
+                        <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin shrink-0" />
+                      ) : downloadStatus === 'error' ? (
+                        <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                      ) : (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      )}
+                      <span className="truncate leading-tight font-medium text-[11px]">
+                        {statusMessage || 'Exporting clip...'}
+                      </span>
+                    </div>
+                    {(isDownloading || downloadStatus === 'running') && (
+                      <span className="font-mono text-xs font-bold text-sky-400 tabular-nums shrink-0">
+                        {Math.round(downloadProgress)}%
+                      </span>
+                    )}
+                  </div>
+
+                  {(isDownloading || downloadStatus === 'running') && (
+                    <div className="w-full bg-white/[0.08] rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500 via-sky-400 to-cyan-300 rounded-full transition-all duration-300 ease-out"
+                        style={{ width: `${Math.min(100, Math.max(0, downloadProgress))}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -158,9 +184,15 @@ export const EditorMobileSheet: React.FC<EditorMobileSheetProps> = ({
                 }`}
               >
                 {isDownloading ? (
-                  <><Loader2 className="w-4 h-4 animate-spin text-black" /><span>Processing & Exporting…</span></>
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-black" />
+                    <span>Exporting ({Math.round(downloadProgress)}%)…</span>
+                  </>
                 ) : (
-                  <><Download className="w-4 h-4" /><span>Start Export Download</span></>
+                  <>
+                    <Download className="w-4 h-4" />
+                    <span>Start Export Download</span>
+                  </>
                 )}
               </button>
             </div>

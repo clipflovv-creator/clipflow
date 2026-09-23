@@ -68,14 +68,6 @@ export function useTwitchPreview(
     setIsLoadingStream(true);
     setStreamError('');
 
-    console.log('%c[Twitch HLS Preview 📺 RESOLVING STREAM INFO]', 'color: #a855f7; font-weight: bold;', {
-      activeUrl,
-      targetUrl,
-      isTwitchLiveChannel,
-      quality,
-      forceRefresh,
-    });
-
     try {
       const res = await api.twitch.getStreamInfo(targetUrl, {
         quality,
@@ -89,7 +81,6 @@ export function useTwitchPreview(
       }
 
       const data = await res.json();
-      console.log('%c[Twitch HLS Preview ✅ STREAM INFO RECEIVED]', 'color: #22c55e; font-weight: bold;', data);
 
       if (data.streamUrl) {
         setTwitchHlsUrl(data.streamUrl);

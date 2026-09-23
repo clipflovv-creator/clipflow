@@ -404,7 +404,6 @@ export class ClientFFmpegEngine {
     const ffmpegLogs: string[] = [];
     const logHandler = ({ message }: { message: string }) => {
       ffmpegLogs.push(message);
-      console.log('[FFmpeg]', message);
     };
     ffmpeg.on('log', logHandler);
 
@@ -517,10 +516,8 @@ export class ClientFFmpegEngine {
         outName,
       ];
 
-      console.log('[ClientFFmpegEngine] 🚀 Executing fast stream-copy muxing (16:9 default, no re-encode):', copyArgs.join(' '));
       const copyExit = await ffmpeg.exec(copyArgs);
       if (copyExit === 0) {
-        console.log('[ClientFFmpegEngine] ✅ Fast stream copy succeeded in milliseconds!');
         const outputBytes = await ffmpeg.readFile(outName) as Uint8Array;
         try {
           await ffmpeg.deleteFile('input_v.mp4');

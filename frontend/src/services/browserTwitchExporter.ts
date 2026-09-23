@@ -67,16 +67,6 @@ export async function exportTwitchClipInBrowser(
     onProgress,
   } = options;
 
-  console.log('%c[Browser Twitch Exporter 🎬 INITIATED]', 'color: #a855f7; font-weight: bold; font-size: 13px;', {
-    manifestUrl,
-    trimStart,
-    trimEnd,
-    duration: trimEnd - trimStart,
-    quality,
-    format,
-    aspectRatio,
-  });
-
   if (onProgress) onProgress('Analyzing Twitch stream timeline...', 5);
 
   // ── Step 1: Selectively fetch ONLY the required HLS .ts segments ──────────────
@@ -132,12 +122,6 @@ export async function exportTwitchClipInBrowser(
 
         const mimeType = cleanExt === 'mp3' ? 'audio/mpeg' : cleanExt === 'wav' ? 'audio/wav' : 'video/mp4';
         const blob = new Blob([rawData], { type: mimeType });
-
-        console.log('%c[Browser Twitch Exporter ✅ EXPORT COMPLETE]', 'color: #22c55e; font-weight: bold;', {
-          fileName: outputFileName,
-          sizeBytes: blob.size,
-          sizeMB: (blob.size / (1024 * 1024)).toFixed(2),
-        });
 
         // Trigger browser file download directly
         triggerBlobDownload(blob, outputFileName);

@@ -195,9 +195,7 @@ export function useEditorMetadata(
         setQualityOptions(buildQualityOptions(data));
       }
     } catch (err: any) {
-      if (isTwitchLiveNow) {
-        console.log('[Twitch Metadata] Background enrichment failed, keeping LIVE metadata');
-      } else {
+      if (!isTwitchLiveNow) {
         console.error('[ClipFlow Editor] Error loading video metadata:', err);
         setErrorMeta('error');
       }

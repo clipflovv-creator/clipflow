@@ -140,7 +140,6 @@ export async function parseHlsManifest(
       try {
         const probeRes = await fetch(candidatePath, { method: 'HEAD' });
         if (probeRes.ok) {
-          console.log(`[HLS Segment Fetcher ⚡] Switched to quality-matched variant: ${candidatePath}`);
           return await parseHlsManifest(candidatePath);
         }
       } catch {
@@ -270,15 +269,6 @@ export async function fetchRequiredHlsSegments(
   const sliceStartTime = requiredSegments[0].startTime;
   const relativeTrimStart = Math.max(0, safeTrimStart - sliceStartTime);
 
-  console.log('%c[HLS Segment Fetcher 📦]', 'color: #38bdf8; font-weight: bold;', {
-    requestedTrim: `${safeTrimStart.toFixed(2)}s -> ${safeTrimEnd.toFixed(2)}s (${targetDuration.toFixed(2)}s)`,
-    totalManifestSegments: segments.length,
-    selectedSegments: `${requiredSegments.length} segments (${requiredSegments[0].index} -> ${requiredSegments[requiredSegments.length - 1].index})`,
-    initSegmentUrl: initSegmentUrl || 'None',
-    sliceStartTime: `${sliceStartTime.toFixed(2)}s`,
-    relativeTrimStart: `${relativeTrimStart.toFixed(2)}s`,
-  });
-
   // Step 1: Fetch initialization segment if present (fMP4 / CMAF)
   let initBuffer: ArrayBuffer | null = null;
   let resolvedInitUrl = initSegmentUrl;
@@ -300,7 +290,6 @@ export async function fetchRequiredHlsSegments(
       const initRes = await fetch(fetchUrl);
       if (initRes.ok) {
         initBuffer = await initRes.arrayBuffer();
-        console.log(`[HLS Segment Fetcher 📦] Downloaded fMP4 init header (${initBuffer.byteLength} bytes)`);
       }
     } catch (initErr) {
       console.warn('[HLS Segment Fetcher ⚠️] Optional init header fetch failed, proceeding with segments:', initErr);
@@ -383,8 +372,6 @@ export async function fetchRequiredHlsSegments(
       ));
 
   const containerType: 'mp4' | 'ts' = isMp4 ? 'mp4' : 'ts';
-
-  console.log(`[HLS Segment Fetcher ✅] Assembled ${totalSegments} segments (${(totalBytes / (1024 * 1024)).toFixed(2)} MB total, container: ${containerType})`);
 
   return {
     buffer: combined,
