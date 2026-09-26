@@ -62,11 +62,8 @@ export class TwitchDownloaderService {
       quality
     );
 
-    console.log(`[Twitch Downloader] 🎯 Stream resolved:`);
-    console.log(`   • Source Type: ${streamInfo.sourceType}`);
-    if (streamInfo.vodId) console.log(`   • DVR VOD ID: ${streamInfo.vodId}`);
-    if (streamInfo.channel) console.log(`   • Channel: ${streamInfo.channel}`);
-    console.log(`   • HLS URL: ${streamInfo.streamUrl.substring(0, 80)}...`);
+    const startDownloadTime = Date.now();
+    console.log(`[Twitch Download] 🚀 Starting clip export: ${streamInfo.channel ? `channel: ${streamInfo.channel}` : `vod: ${streamInfo.vodId || 'live'}`}, format=${format}, quality=${quality || 'source'}, trim=${trimStart}s-${trimEnd !== undefined ? `${trimEnd}s` : 'end'}`);
 
     if (onProgress) onProgress('🎬 Extracting timeline clip with FFmpeg...', 35);
 
@@ -90,12 +87,9 @@ export class TwitchDownloaderService {
 
     if (onProgress) onProgress('🔍 Verifying clip integrity...', 85);
 
-    console.log(`[Twitch Downloader] 📦 Final rendered clip: ${exportResult.outputPath}`);
-    console.log(`   • Render Mode: ${exportResult.mode}`);
-    console.log(`   • Size: ${(exportResult.validation.sizeBytes / (1024 * 1024)).toFixed(2)} MB`);
-    if (exportResult.validation.durationSeconds !== undefined) {
-      console.log(`   • Duration: ${exportResult.validation.durationSeconds.toFixed(2)}s`);
-    }
+    const elapsedSec = ((Date.now() - startDownloadTime) / 1000).toFixed(1);
+    const sizeMb = (exportResult.validation.sizeBytes / (1024 * 1024)).toFixed(2);
+    console.log(`[Twitch Download] ✅ Export complete! (${sizeMb} MB in ${elapsedSec}s, mode: ${exportResult.mode})`);
 
     if (onProgress) onProgress('✅ Complete!', 100);
     return exportResult.outputPath;

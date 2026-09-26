@@ -3,8 +3,10 @@ import fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getFFmpegAspectFilter } from '../video-crop.service.js';
-import { getFFmpegLocationFlag } from '../../utils/binary-resolver.util.js';
+import { resolveStreamUrls } from '../ytdlp-online/index.js';
 import { getYoutubeCookiesPath } from '../../utils/cookie-resolver.util.js';
+import { getFFmpegLocationFlag } from '../../utils/binary-resolver.util.js';
+import { logger } from '../../utils/logger.util.js';
 
 function formatSecondsToTime(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
@@ -16,6 +18,35 @@ function formatSecondsToTime(seconds: number): string {
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
   }
   return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+export function getFFmpegStreamArgs(streamUrl: string): string[] {
+  const flags: string[] = [
+    '-reconnect', '1',
+    '-reconnect_streamed', '1',
+    '-reconnect_delay_max', '5',
+  ];
+
+  if (streamUrl.includes('googlevideo.com') || streamUrl.includes('youtube.com')) {
+    flags.push('-referer', '"https://www.youtube.com/"');
+    if (streamUrl.includes('c=IOS')) {
+      flags.push('-user_agent', '"com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)"');
+    } else if (streamUrl.includes('c=ANDROID')) {
+      flags.push('-user_agent', '"com.google.android.youtube/19.29.37 (Linux; U; Android 14) gzip"');
+    } else {
+      flags.push('-user_agent', '"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"');
+    }
+  } else if (streamUrl.includes('twimg.com') || streamUrl.includes('twitter.com') || streamUrl.includes('x.com')) {
+    flags.push('-referer', '"https://x.com/"');
+    flags.push('-user_agent', '"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"');
+  } else if (streamUrl.includes('instagram.com') || streamUrl.includes('cdninstagram.com')) {
+    flags.push('-referer', '"https://www.instagram.com/"');
+    flags.push('-user_agent', '"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"');
+  } else {
+    flags.push('-user_agent', '"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"');
+  }
+
+  return flags;
 }
 
 const execAsync = promisify(exec);
@@ -59,8 +90,8 @@ export class YouTubeDownloaderService {
   }
 
   /**
-   * Downloads a YouTube video or audio clip at exact requested resolution (4K, 2K, 1080p, etc.)
-   * directly clipping the requested time slice without ever downloading the full video.
+   * Downloads a YouTube video or audio clip via fast stream resolution + FFmpeg,
+   * with automatic fallback to local yt-dlp if direct stream download is blocked.
    */
   static async downloadClip(options: YouTubeDownloadOptions): Promise<string> {
     const {
@@ -85,158 +116,222 @@ export class YouTubeDownloaderService {
     const isTrimmed = typeof trimEnd === 'number' && trimEnd > trimStart;
     const filterString = !isAudio ? getFFmpegAspectFilter(aspectRatio as any, fitMode, cropPosition as any, cropBox) : '';
     const needsCrop = !isAudio && Boolean(filterString);
-    const heightLimit = this.parseHeightLimit(quality);
-
-    const cookiesFile = getYoutubeCookiesPath();
-    const rawTarget = needsCrop ? tempRawFile : finalFile;
 
     // Clean up any stale files from previous attempts
     try {
-      if (fs.existsSync(rawTarget)) fs.unlinkSync(rawTarget);
       if (fs.existsSync(finalFile)) fs.unlinkSync(finalFile);
       if (fs.existsSync(tempRawFile)) fs.unlinkSync(tempRawFile);
     } catch (_) {}
 
-    const startTimeStr = formatSecondsToTime(trimStart);
-    const endTimeStr = isTrimmed && trimEnd ? formatSecondsToTime(trimEnd) : '';
+    if (onProgress) onProgress('🌐 Resolving YouTube streams...', 15);
 
-    const proxy = process.env.YTDLP_PROXY?.trim();
-    const poToken = process.env.YTDLP_PO_TOKEN?.trim();
-    const NODE_BIN = process.execPath;
+    try {
+      // 1. Resolve direct streams via cascading resolver (InnerTube -> ytdlp.online -> yt-dlp)
+      const stream = await resolveStreamUrls(url, ytDlpBin);
+      const videoStreamUrl = stream.videoUrl;
+      const audioStreamUrl = stream.audioUrl;
 
-    // android-based clients reject --cookies; web/ios/mweb need js-runtimes for sig solving
-    const clientDefs: Array<{ arg: string; supportsCookies: boolean }> = [
-      { arg: '',                                                           supportsCookies: true  },
-      { arg: '--extractor-args "youtube:player_client=ios"',              supportsCookies: true  },
-      { arg: '--extractor-args "youtube:player_client=mweb"',             supportsCookies: true  },
-      { arg: '--extractor-args "youtube:player_client=android"',          supportsCookies: false },
-      { arg: '--extractor-args "youtube:player_client=tv,android"',       supportsCookies: false },
-      { arg: '--extractor-args "youtube:player_client=android,ios,mweb"', supportsCookies: false },
-    ];
-
-    const buildArgs = (clientArg: string, useProxy: boolean, useCookies: boolean): string[] => {
-      const ffmpegLocFlag = getFFmpegLocationFlag(ffmpegBin);
-      const args: string[] = [
-        `"${ytDlpBin}"`,
-        ...(ffmpegLocFlag ? [ffmpegLocFlag] : []),
-        `--js-runtimes "node:${NODE_BIN}"`,
-        '--no-check-certificate',
-        '--no-playlist',
-      ];
-
-      if (clientArg) args.push(clientArg);
-
-      if (useProxy && proxy) {
-        args.push(`--proxy "${proxy}"`);
-      } else if (proxy) {
-        args.push('--proxy ""');
+      if (!videoStreamUrl && !audioStreamUrl) {
+        throw new Error('Resolver did not return stream URLs');
       }
 
-      if (poToken) args.push(`--extractor-args "youtube:po_token=web+${poToken}"`);
+      if (onProgress) onProgress('⬇️ Downloading & muxing stream via FFmpeg...', 45);
 
-      if (isTrimmed) {
-        args.push(`--download-sections "*${startTimeStr}-${endTimeStr}"`);
-      }
+      const startTimeStr = formatSecondsToTime(trimStart);
+      const duration = isTrimmed && trimEnd ? (trimEnd - trimStart) : null;
+      const durationArg = duration ? `-t ${duration}` : '';
+      const seekArg = trimStart > 0 ? `-ss ${startTimeStr}` : '';
+
+      const ffmpegArgs: string[] = [`"${ffmpegBin}"`, '-y'];
 
       if (isAudio) {
-        args.push('-f', '"bestaudio[format_note*=original]/bestaudio[format_note*=default]/bestaudio[language_preference>=10]/bestaudio/best"', '-x', '--audio-format', format, '--audio-quality', String(audioQuality));
+        // Audio-only download
+        const targetAudio = (audioStreamUrl || videoStreamUrl)!;
+        ffmpegArgs.push(...getFFmpegStreamArgs(targetAudio));
+        if (seekArg) ffmpegArgs.push(seekArg);
+        ffmpegArgs.push(`-i "${targetAudio}"`);
+        if (durationArg) ffmpegArgs.push(durationArg);
+
+        if (format === 'mp3') {
+          ffmpegArgs.push('-c:a libmp3lame', '-b:a 320k');
+        } else if (format === 'wav') {
+          ffmpegArgs.push('-c:a pcm_s16le');
+        } else {
+          ffmpegArgs.push('-c:a aac', '-b:a 192k');
+        }
+        ffmpegArgs.push(`"${finalFile}"`);
+
       } else {
-        const defaultAudioSelector = '(bestaudio[format_note*=original][ext=m4a]/bestaudio[format_note*=original]/bestaudio[format_note*=default][ext=m4a]/bestaudio[format_note*=default]/bestaudio[language_preference>=10][ext=m4a]/bestaudio[language_preference>=10]/bestaudio[ext=m4a]/bestaudio)';
-        const ytFormat = heightLimit
-          ? `bestvideo[height<=${heightLimit}]+${defaultAudioSelector}/best[height<=${heightLimit}]`
-          : `bestvideo+${defaultAudioSelector}/best`;
-        args.push('-f', `"${ytFormat}"`, '--merge-output-format', 'mp4');
-      }
+        // Video + Audio mux download
+        if (videoStreamUrl && audioStreamUrl) {
+          ffmpegArgs.push(...getFFmpegStreamArgs(videoStreamUrl));
+          if (seekArg) ffmpegArgs.push(seekArg);
+          ffmpegArgs.push(`-i "${videoStreamUrl}"`);
 
-      if (isTrimmed) args.push('--force-keyframes-at-cuts');
-      if (useCookies && cookiesFile) args.push(`--cookies "${cookiesFile}"`);
+          ffmpegArgs.push(...getFFmpegStreamArgs(audioStreamUrl));
+          if (seekArg) ffmpegArgs.push(seekArg);
+          ffmpegArgs.push(`-i "${audioStreamUrl}"`);
+          if (durationArg) ffmpegArgs.push(durationArg);
 
-      args.push('-o', `"${rawTarget}"`, `"${url}"`);
-      return args;
-    };
+          // When video is trimmed or cropped, transcode video with fast x264 to guarantee 100% millisecond-accurate sync
+          if (isTrimmed || needsCrop) {
+            const vf = filterString ? `-vf "${filterString}"` : '';
+            if (vf) ffmpegArgs.push(vf);
+            ffmpegArgs.push('-c:v libx264', '-preset veryfast', '-crf 18', '-pix_fmt yuv420p', '-c:a aac', '-b:a 192k', '-avoid_negative_ts make_zero');
+          } else {
+            ffmpegArgs.push('-c:v copy', '-c:a aac', '-b:a 192k', '-avoid_negative_ts make_zero');
+          }
+          ffmpegArgs.push('-map 0:v:0', '-map 1:a:0', '-shortest', '-movflags +faststart', `"${finalFile}"`);
 
-    if (onProgress) onProgress('⬇️ Downloading high-resolution clip stream...', 30);
+        } else {
+          // Combined stream or single track
+          const singleUrl = (videoStreamUrl || audioStreamUrl)!;
+          ffmpegArgs.push(...getFFmpegStreamArgs(singleUrl));
+          if (seekArg) ffmpegArgs.push(seekArg);
+          ffmpegArgs.push(`-i "${singleUrl}"`);
+          if (durationArg) ffmpegArgs.push(durationArg);
 
-    // Interleave proxy/no-proxy for each client strategy
-    const downloadStrategies: Array<{ clientArg: string; useProxy: boolean; useCookies: boolean }> = [];
-    for (const { arg, supportsCookies } of clientDefs) {
-      const canUseCookies = supportsCookies && Boolean(cookiesFile);
-      if (proxy) downloadStrategies.push({ clientArg: arg, useProxy: true,  useCookies: canUseCookies });
-               downloadStrategies.push({ clientArg: arg, useProxy: false, useCookies: canUseCookies });
-    }
-
-    let lastDownloadErr: any;
-    let downloaded = false;
-
-    for (let attempt = 0; attempt < downloadStrategies.length; attempt++) {
-      const { clientArg, useProxy, useCookies } = downloadStrategies[attempt];
-      const args = buildArgs(clientArg, useProxy, useCookies);
-      console.log(`[YouTube Downloader] Strategy ${attempt + 1}/${downloadStrategies.length} (client=${clientArg || 'default'}, proxy=${useProxy}, cookies=${useCookies})`);
-
-      try {
-        await execAsync(args.join(' '), { maxBuffer: 500 * 1024 * 1024, timeout: 30 * 60 * 1000 });
-        downloaded = true;
-        console.log(`[YouTube Downloader] Strategy ${attempt + 1} succeeded`);
-        break;
-      } catch (err: any) {
-        lastDownloadErr = err;
-        const fullMsg = (err?.stderr || err?.message || String(err)).trim();
-        console.warn(`[YouTube Downloader] Strategy ${attempt + 1} failed:\n${fullMsg}`);
-        if (attempt < downloadStrategies.length - 1) {
-          await new Promise((r) => setTimeout(r, 600));
+          if (isTrimmed || needsCrop) {
+            const vf = filterString ? `-vf "${filterString}"` : '';
+            if (vf) ffmpegArgs.push(vf);
+            ffmpegArgs.push('-c:v libx264', '-preset veryfast', '-crf 18', '-pix_fmt yuv420p', '-c:a aac', '-b:a 192k', '-avoid_negative_ts make_zero');
+          } else {
+            ffmpegArgs.push('-c:v copy', '-c:a aac', '-avoid_negative_ts make_zero');
+          }
+          ffmpegArgs.push('-movflags +faststart', `"${finalFile}"`);
         }
       }
+
+      const ffmpegCmd = ffmpegArgs.join(' ');
+      logger.info('YouTubeDownloader', 'Running FFmpeg direct stream download & mux...', { command: ffmpegCmd });
+
+      try {
+        await execAsync(ffmpegCmd, { maxBuffer: 500 * 1024 * 1024, timeout: 15 * 60 * 1000 });
+      } catch (ffErr: any) {
+        // If stream copy fails due to codec mismatch, retry with transcode
+        if (ffmpegCmd.includes('-c:v copy')) {
+          logger.warn('YouTubeDownloader', 'Stream copy failed, retrying with transcode...', { error: ffErr?.message });
+          const retryArgs = ffmpegArgs.map((a) => a === '-c:v copy' ? '-c:v libx264 -preset veryfast -crf 18' : a);
+          await execAsync(retryArgs.join(' '), { maxBuffer: 500 * 1024 * 1024, timeout: 15 * 60 * 1000 });
+        } else {
+          throw ffErr;
+        }
+      }
+
+      if (fs.existsSync(finalFile) && fs.statSync(finalFile).size > 0) {
+        const fileSizeMb = (fs.statSync(finalFile).size / (1024 * 1024)).toFixed(2);
+        logger.info('YouTubeDownloader', `Download completed successfully (${fileSizeMb} MB) via direct stream mux`);
+        if (onProgress) onProgress('✅ Download ready!', 100);
+        return finalFile;
+      }
+    } catch (directErr: any) {
+      const shortErr = directErr?.message?.includes('403') ? 'Server returned 403 Forbidden' : (directErr?.message?.split('\n')[0]?.substring(0, 80) || 'Stream download failed');
+      logger.warn('YouTubeDownloader', `Direct stream download failed (${shortErr}). Falling back to local yt-dlp...`, { rawError: directErr?.message });
     }
 
-    if (!downloaded) {
-      throw lastDownloadErr;
+    // 2. Robust fallback: Download via local yt-dlp if direct stream failed
+    if (ytDlpBin) {
+      if (onProgress) onProgress('⬇️ Processing via yt-dlp engine...', 50);
+      return await YouTubeDownloaderService.downloadWithLocalYtDlp(options);
     }
 
-    if (!fs.existsSync(rawTarget) || fs.statSync(rawTarget).size === 0) {
-      throw new Error('Video clip stream download failed or produced an empty file.');
+    throw new Error('All YouTube download strategies failed');
+  }
+
+  /**
+   * Fallback downloader using local yt-dlp binary with cookies & extractor args.
+   */
+  static async downloadWithLocalYtDlp(options: YouTubeDownloadOptions): Promise<string> {
+    const {
+      url,
+      format = 'mp4',
+      quality = '1080p',
+      audioQuality = '0',
+      trimStart = 0,
+      trimEnd,
+      aspectRatio,
+      fitMode = 'pad',
+      cropPosition = 'center',
+      cropBox,
+      tempRawFile,
+      finalFile,
+      ytDlpBin,
+      ffmpegBin,
+      onProgress,
+    } = options;
+
+    const isAudio = format === 'mp3' || format === 'wav' || format === 'm4a' || format === 'aac';
+    const isTrimmed = typeof trimEnd === 'number' && trimEnd > trimStart;
+    const filterString = !isAudio ? getFFmpegAspectFilter(aspectRatio as any, fitMode, cropPosition as any, cropBox) : '';
+    const needsCrop = !isAudio && Boolean(filterString);
+    const downloadTarget = (isTrimmed || needsCrop) ? tempRawFile : finalFile;
+
+    const cookiesPath = getYoutubeCookiesPath();
+    const cookieArg = cookiesPath ? `--cookies "${cookiesPath}"` : '';
+    const ffmpegLocFlag = getFFmpegLocationFlag(ffmpegBin);
+
+    const ytDlpArgs: string[] = [
+      `"${ytDlpBin}"`,
+      ...(ffmpegLocFlag ? [ffmpegLocFlag] : []),
+      '--js-runtimes node',
+      '--no-warnings',
+      '--no-check-certificate',
+      '--no-playlist',
+      cookieArg,
+      '--extractor-args', '"youtube:player_client=android,web_embedded"',
+    ];
+
+    if (isAudio) {
+      ytDlpArgs.push('-f', '"bestaudio[ext=m4a]/bestaudio/best"', '-x', '--audio-format', format, '--audio-quality', String(audioQuality));
+    } else {
+      const heightLimit = YouTubeDownloaderService.parseHeightLimit(quality);
+      const defaultAudio = '(bestaudio[ext=m4a]/bestaudio)';
+      const ytFormat = heightLimit
+        ? `bestvideo[height<=${heightLimit}]+${defaultAudio}/best[height<=${heightLimit}]/bestvideo+${defaultAudio}/best`
+        : `bestvideo+${defaultAudio}/best`;
+      ytDlpArgs.push('-f', `"${ytFormat}"`, '--merge-output-format', 'mp4');
     }
 
-    const rawSizeMb = (fs.statSync(rawTarget).size / (1024 * 1024)).toFixed(2);
-    console.log(`[YouTube Downloader] ✅ Full-quality stream downloaded (${rawSizeMb} MB)`);
+    ytDlpArgs.push('-o', `"${downloadTarget}"`, `"${url}"`);
 
-    // ── Local FFmpeg Processing (Aspect Ratio Cropping if requested) ──
-    if (needsCrop) {
-      if (onProgress) onProgress('✂️ Cropping clip aspect ratio...', 80);
+    const ytDlpCmd = ytDlpArgs.filter(Boolean).join(' ');
+    logger.info('YouTubeDownloader:Fallback', 'Executing fallback yt-dlp engine...', { command: ytDlpCmd });
+    await execAsync(ytDlpCmd, { maxBuffer: 500 * 1024 * 1024, timeout: 15 * 60 * 1000 });
 
-      const ffmpegArgs: string[] = [
+    if (isTrimmed || needsCrop) {
+      const startTimeStr = formatSecondsToTime(trimStart);
+      const duration = isTrimmed && trimEnd ? (trimEnd - trimStart) : null;
+      const durationArg = duration ? `-t ${duration}` : '';
+      const seekArg = trimStart > 0 ? `-ss ${startTimeStr}` : '';
+      const vf = filterString ? `-vf "${filterString}"` : '';
+
+      const cutArgs = [
         `"${ffmpegBin}"`,
         '-y',
-        '-fflags +genpts+discardcorrupt',
-        `-i "${rawTarget}"`,
-        `-vf "${filterString}"`,
+        seekArg,
+        `-i "${downloadTarget}"`,
+        durationArg,
+        vf,
         '-c:v libx264',
-        '-preset fast',
+        '-preset veryfast',
         '-crf 18',
+        '-pix_fmt yuv420p',
         '-c:a aac',
-        '-map 0:v:0',
-        '-map 0:a:0?',
+        '-b:a 192k',
         '-avoid_negative_ts make_zero',
         '-movflags +faststart',
         `"${finalFile}"`,
-      ];
+      ].filter(Boolean).join(' ');
 
-      console.log(`[YouTube Downloader] ✂️ Cropping clip with FFmpeg:\n${ffmpegArgs.join(' ')}`);
-      await execAsync(ffmpegArgs.join(' '), { maxBuffer: 100 * 1024 * 1024, timeout: 30 * 60 * 1000 });
-
-      // Clean up raw download if it was stored in tempRawFile
-      if (fs.existsSync(tempRawFile)) {
-        try { fs.unlinkSync(tempRawFile); } catch (_) {}
-      }
+      await execAsync(cutArgs, { maxBuffer: 500 * 1024 * 1024, timeout: 15 * 60 * 1000 });
+      try { if (fs.existsSync(downloadTarget)) fs.unlinkSync(downloadTarget); } catch {}
     }
 
     if (!fs.existsSync(finalFile) || fs.statSync(finalFile).size === 0) {
-      throw new Error('Final exported file was not generated.');
+      throw new Error('yt-dlp fallback produced an empty output file');
     }
 
-    const finalSizeMb = (fs.statSync(finalFile).size / (1024 * 1024)).toFixed(2);
-    console.log(`[YouTube Downloader] 🎉 Export ready: ${finalFile} (${finalSizeMb} MB)`);
-
-    if (onProgress) onProgress('✅ Complete!', 100);
+    if (onProgress) onProgress('✅ Download ready!', 100);
     return finalFile;
   }
 }

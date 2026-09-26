@@ -291,6 +291,35 @@ export const appRequestsApi = {
   },
 };
 
+// ── ytdlp.online Direct Stream API ──────────────────────────────────────────
+export const ytdlpOnlineApi = {
+  async testResolve(url: string) {
+    return fetch(`${BACKEND_URL}/api/video/ytdlp-online/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+  },
+
+  async getSessions() {
+    return fetch(`${BACKEND_URL}/api/video/ytdlp-online/sessions`);
+  },
+
+  async addSession(sid: string, session: string) {
+    return fetch(`${BACKEND_URL}/api/video/ytdlp-online/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sid, session }),
+    });
+  },
+
+  async clearSessions() {
+    return fetch(`${BACKEND_URL}/api/video/ytdlp-online/sessions`, {
+      method: 'DELETE',
+    });
+  },
+};
+
 // ── Unified API Export ──────────────────────────────────────────────────────
 export const api = {
   auth: authApi,
@@ -300,6 +329,8 @@ export const api = {
   cloudStorage: cloudStorageApi,
   drive: driveApi,
   appRequests: appRequestsApi,
+  ytdlpOnline: ytdlpOnlineApi,
 };
 
 export default api;
+

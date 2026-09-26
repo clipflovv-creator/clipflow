@@ -253,22 +253,47 @@ self.onmessage = async (e: MessageEvent) => {
           percent: 60,
           message: 'Processing clip...',
         });
-        const fastCopyArgs = [
+
+        // Strategy 1: Direct lossless stream copy (video copy + audio copy with ADTS-to-ASC filter)
+        let fastCopyArgs = [
           '-err_detect', 'ignore_err',
           '-fflags', '+genpts+discardcorrupt',
-          '-i', internalInput,
           '-ss', Math.max(0, trimStart).toFixed(3),
+          '-i', internalInput,
           '-t', Math.max(0.1, duration).toFixed(3),
           '-c:v', 'copy',
-          '-c:a', 'aac',
-          '-b:a', safeAudioBitrate,
+          '-c:a', 'copy',
+          '-bsf:a', 'aac_adtstoasc',
           '-map', '0:v:0',
           '-map', '0:a:0?',
           '-avoid_negative_ts', 'make_zero',
           '-movflags', '+faststart',
           internalOutput,
         ];
-        const copyCode = await instance.exec(fastCopyArgs);
+
+        let copyCode = await instance.exec(fastCopyArgs);
+
+        // Strategy 2: If audio bitstream copy fails, do video-copy + fast audio aac transcode (takes <0.5s)
+        if (copyCode !== 0) {
+          try { await instance.deleteFile(internalOutput); } catch {}
+          fastCopyArgs = [
+            '-err_detect', 'ignore_err',
+            '-fflags', '+genpts+discardcorrupt',
+            '-ss', Math.max(0, trimStart).toFixed(3),
+            '-i', internalInput,
+            '-t', Math.max(0.1, duration).toFixed(3),
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-b:a', safeAudioBitrate,
+            '-map', '0:v:0',
+            '-map', '0:a:0?',
+            '-avoid_negative_ts', 'make_zero',
+            '-movflags', '+faststart',
+            internalOutput,
+          ];
+          copyCode = await instance.exec(fastCopyArgs);
+        }
+
         if (copyCode === 0) {
           self.postMessage({
             type: 'PROGRESS',
@@ -281,6 +306,7 @@ self.onmessage = async (e: MessageEvent) => {
             await instance.deleteFile(internalInput);
             await instance.deleteFile(internalOutput);
           } catch {}
+          console.log(`[FFmpeg.wasm Worker] ⚡ Lossless stream copy complete! Generated ${(outputData.length / (1024 * 1024)).toFixed(2)} MB clip`);
           (self as unknown as Worker).postMessage(
             {
               type: 'COMPLETE',
@@ -293,7 +319,7 @@ self.onmessage = async (e: MessageEvent) => {
           );
           return;
         }
-        console.warn('[FFmpeg.wasm Worker] Fast copy returned non-zero code', copyCode, '- falling back to transcode');
+        console.warn('[FFmpeg.wasm Worker] Fast stream copy failed, falling back to transcode');
         try { await instance.deleteFile(internalOutput); } catch {}
       }
 

@@ -241,10 +241,14 @@ export class TwitchFFmpegExporterService {
     // Attempt Fast Stream Copy first if downscaling is not required
     if (!needsDownscale) {
       try {
-        console.log(`[Twitch FFmpeg Exporter] 🚀 Attempting ultrafast H.264+AAC stream copy (matches target quality)...`);
         const fastCopyArgs: string[] = [
           `"${ffmpegBin}"`,
           '-y',
+          '-reconnect 1',
+          '-reconnect_streamed 1',
+          '-reconnect_delay_max 5',
+          '-referer "https://www.twitch.tv/"',
+          '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"',
           '-fflags +genpts+discardcorrupt',
           `-ss ${trimStart}`,
           `-i "${hlsStreamUrl}"`,
@@ -253,16 +257,45 @@ export class TwitchFFmpegExporterService {
           fastCopyArgs.push(`-t ${duration}`);
         }
         fastCopyArgs.push(
-          '-c copy',
+          '-c:v copy',
+          '-c:a copy',
+          '-bsf:a aac_adtstoasc',
           '-map 0:v:0',
           '-map 0:a:0?',
           '-avoid_negative_ts make_zero',
           '-movflags +faststart',
-          '-bsf:a aac_adtstoasc',
           `"${outputPath}"`
         );
 
-        await execAsync(fastCopyArgs.join(' '), { timeout: 30000 });
+        let copyCode = 0;
+        try {
+          await execAsync(fastCopyArgs.join(' '), { timeout: 30000 });
+        } catch {
+          // If pure audio copy fails, retry with video copy + audio aac encode (<1s)
+          try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {}
+          const retryCopyArgs = [
+            `"${ffmpegBin}"`,
+            '-y',
+            '-reconnect 1',
+            '-reconnect_streamed 1',
+            '-reconnect_delay_max 5',
+            '-referer "https://www.twitch.tv/"',
+            '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"',
+            '-fflags +genpts+discardcorrupt',
+            `-ss ${trimStart}`,
+            `-i "${hlsStreamUrl}"`,
+            ...(duration !== undefined ? [`-t ${duration}`] : []),
+            '-c:v copy',
+            '-c:a aac',
+            `-b:a ${safeAudioBitrate}`,
+            '-map 0:v:0',
+            '-map 0:a:0?',
+            '-avoid_negative_ts make_zero',
+            '-movflags +faststart',
+            `"${outputPath}"`
+          ];
+          await execAsync(retryCopyArgs.join(' '), { timeout: 30000 });
+        }
 
         // Validate stream copy output
         const copyVal = await this.validateMedia(outputPath, ffmpegBin, duration);
@@ -286,6 +319,11 @@ export class TwitchFFmpegExporterService {
     const transcodeArgs: string[] = [
       `"${ffmpegBin}"`,
       '-y',
+      '-reconnect 1',
+      '-reconnect_streamed 1',
+      '-reconnect_delay_max 5',
+      '-referer "https://www.twitch.tv/"',
+      '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"',
       '-fflags +genpts+discardcorrupt',
       `-ss ${trimStart}`,
       `-i "${hlsStreamUrl}"`,

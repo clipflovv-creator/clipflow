@@ -8,9 +8,7 @@
 import * as MP4Box from 'mp4box';
 import { api } from './api';
 
-// Edge Relay URL (if deployed on Cloudflare Workers, set VITE_EDGE_RELAY_URL in frontend/.env)
-// Example: https://yt-range-relay.yourname.workers.dev
-const EDGE_RELAY_URL = (import.meta.env.VITE_EDGE_RELAY_URL as string) || 'https://yt-range-relay.clipflovv.workers.dev';
+const EDGE_RELAY_URL = (import.meta.env.VITE_EDGE_RELAY_URL as string) || '';
 
 /**
  * Unwraps any nested proxy prefixes (e.g. localhost or Render proxy-stream endpoints)
@@ -76,6 +74,9 @@ export async function fetchByteRange(
     : `bytes=${startByte}-`;
 
   let response: Response;
+  const isWorker = proxiedUrl.includes('workers.dev');
+  console.log(`[MediaRangeFetcher] 🚀 Range request -> ${rangeHeader} via ${isWorker ? 'Cloudflare Worker Relay' : 'Backend Proxy'}`);
+
   try {
     response = await fetch(proxiedUrl, {
       headers: {
@@ -84,7 +85,7 @@ export async function fetchByteRange(
     });
 
     // If Cloudflare Edge Relay returned an error (e.g. 403, 502), transparently fall back to backend proxy
-    if (!response.ok && response.status !== 206 && proxiedUrl.includes('workers.dev')) {
+    if (!response.ok && response.status !== 206 && isWorker) {
       console.warn(`[MediaRangeFetcher] Edge relay returned status ${response.status}. Falling back to backend proxy...`);
       const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
       response = await fetch(fallbackUrl, {
@@ -93,7 +94,7 @@ export async function fetchByteRange(
     }
   } catch (netErr) {
     // Network failure on relay: fallback to backend proxy
-    if (proxiedUrl.includes('workers.dev')) {
+    if (isWorker) {
       console.warn('[MediaRangeFetcher] Edge relay network error, falling back to backend proxy:', netErr);
       const fallbackUrl = api.video.getProxyStreamUrl(cleanUrl);
       response = await fetch(fallbackUrl, {
@@ -109,7 +110,9 @@ export async function fetchByteRange(
   }
 
   if (!response.body) {
-    return await response.arrayBuffer();
+    const ab = await response.arrayBuffer();
+    console.log(`[MediaRangeFetcher] ✅ Status ${response.status} (${ab.byteLength} bytes)`);
+    return ab;
   }
 
   const contentLengthHeader = response.headers.get('content-length');
@@ -130,6 +133,8 @@ export async function fetchByteRange(
       }
     }
   }
+
+  console.log(`[MediaRangeFetcher] ✅ Status ${response.status} (${(receivedBytes / 1024).toFixed(1)} KB received, Content-Range: ${response.headers.get('content-range') || 'none'})`);
 
   // Concatenate chunks into single ArrayBuffer
   const combined = new Uint8Array(receivedBytes);

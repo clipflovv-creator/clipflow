@@ -5,6 +5,8 @@ import { promisify } from 'util';
 import crypto from 'crypto';
 import { scheduleCleanup } from '../ffmpeg.service.js';
 import { getYoutubeCookiesPath } from '../../utils/cookie-resolver.util.js';
+import { resolveStreamUrls } from '../ytdlp-online/index.js';
+import { getFFmpegStreamArgs } from './yt-downloader.service.js';
 
 const execAsync = promisify(exec);
 
@@ -89,7 +91,8 @@ export class YouTubeFrameExtractorService {
       try {
         const coarseSeek = Math.max(0, timestamp - 2);
         const fineSeek = timestamp - coarseSeek;
-        await execAsync(`"${ffmpegBin}" -ss ${coarseSeek} -i "${streamUrl}" -ss ${fineSeek} -frames:v 1 -update 1 ${qOption} ${vfOption} -y "${framePath}"`, { timeout: 15000 });
+        const streamFlags = getFFmpegStreamArgs(streamUrl).join(' ');
+        await execAsync(`"${ffmpegBin}" ${streamFlags} -ss ${coarseSeek} -i "${streamUrl}" -ss ${fineSeek} -frames:v 1 -update 1 ${qOption} ${vfOption} -y "${framePath}"`, { timeout: 15000 });
         if (fs.existsSync(framePath) && fs.statSync(framePath).size > 1000) {
           scheduleCleanup(framePath, 2 * 60 * 60 * 1000);
           return { filePath: framePath, ext, isPng, fromCache: false };
@@ -99,15 +102,16 @@ export class YouTubeFrameExtractorService {
       }
     }
 
-    // 2. Resolve direct video stream URL using yt-dlp and extract with FFmpeg
+    // 2. Resolve direct video stream URL using ytdlp.online (MAIN) -> local yt-dlp (FALLBACK)
     try {
-      const formatSelector = `bestvideo[height<=${heightLimit}]/best[height<=${heightLimit}]/best`;
-      const { stdout } = await execAsync(`"${ytDlpBin}" --get-url --no-warnings --no-check-certificate -f "${formatSelector}" "${url}"`, { timeout: 20000 });
-      const directUrl = stdout.trim().split('\n').filter(Boolean)[0]?.trim();
+      const cookiesFile = getYoutubeCookiesPath();
+      const resolved = await resolveStreamUrls(url, ytDlpBin, cookiesFile || undefined);
+      const directUrl = resolved.videoUrl || resolved.allUrls[0];
       if (directUrl) {
         const coarseSeek = Math.max(0, timestamp - 2);
         const fineSeek = timestamp - coarseSeek;
-        await execAsync(`"${ffmpegBin}" -ss ${coarseSeek} -i "${directUrl}" -ss ${fineSeek} -frames:v 1 -update 1 ${qOption} ${vfOption} -y "${framePath}"`, { timeout: 15000 });
+        const directFlags = getFFmpegStreamArgs(directUrl).join(' ');
+        await execAsync(`"${ffmpegBin}" ${directFlags} -ss ${coarseSeek} -i "${directUrl}" -ss ${fineSeek} -frames:v 1 -update 1 ${qOption} ${vfOption} -y "${framePath}"`, { timeout: 15000 });
         if (fs.existsSync(framePath) && fs.statSync(framePath).size > 1000) {
           scheduleCleanup(framePath, 2 * 60 * 60 * 1000);
           return { filePath: framePath, ext, isPng, fromCache: false };

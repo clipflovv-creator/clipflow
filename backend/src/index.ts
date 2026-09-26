@@ -16,6 +16,7 @@ import twitchLiveChannelRoutes from './routes/twitch-live-channel.routes.js';
 import appRequestRoutes from './routes/app-request.routes.js';
 import path from 'path';
 import fs from 'fs';
+import { logger } from './utils/logger.util.js';
 
 dotenv.config();
 
@@ -95,9 +96,9 @@ app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Request logger middleware
+// Request logger middleware (summarizes in console, writes full raw data to app.log)
 app.use((req, res, next) => {
-  console.log(`[HTTP] ${req.method} ${req.url}`);
+  logger.http(req.method, req.originalUrl || req.url);
   next();
 });
 
@@ -239,6 +240,22 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
   try { httpServer.close(); } catch {}
   process.exit(0);
+});
+
+process.on('unhandledRejection', (reason: any) => {
+  logger.error({
+    context: 'UnhandledRejection',
+    summary: reason?.message || 'Unhandled Promise Rejection',
+    error: reason,
+  });
+});
+
+process.on('uncaughtException', (err: Error) => {
+  logger.error({
+    context: 'UncaughtException',
+    summary: err.message,
+    error: err,
+  });
 });
 
 export default app;

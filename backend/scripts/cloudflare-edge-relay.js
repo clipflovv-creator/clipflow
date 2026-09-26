@@ -27,6 +27,7 @@ export default {
       });
     }
 
+    const requestUrl = new URL(request.url);
     let targetUrl = requestUrl.searchParams.get('url');
 
     if (!targetUrl) {
@@ -86,8 +87,10 @@ export default {
         upstreamHeaders.set('Referer', 'https://www.instagram.com/');
       } else if (targetUrl.includes('twitter.com') || targetUrl.includes('x.com') || targetUrl.includes('twimg.com')) {
         upstreamHeaders.set('Referer', 'https://twitter.com/');
-      } else if (targetUrl.includes('twitch.tv') || targetUrl.includes('ttvnw.net')) {
+      } else if (targetUrl.includes('twitch.tv') || targetUrl.includes('ttvnw.net') || targetUrl.includes('cloudfront.net')) {
         upstreamHeaders.set('Referer', 'https://www.twitch.tv/');
+        upstreamHeaders.set('Origin', 'https://www.twitch.tv');
+        upstreamHeaders.set('Client-ID', 'kimne78kx3ncx6brgo4mv6wki5h1ko');
       }
 
       // 3. Stream from upstream CDN

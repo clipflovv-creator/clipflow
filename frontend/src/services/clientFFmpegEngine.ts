@@ -449,6 +449,11 @@ export class ClientFFmpegEngine {
     const effectiveTrimEnd = typeof trimEnd === 'number' && trimEnd > trimStart ? trimEnd : trimStart + 15;
     const duration = Math.max(0.1, effectiveTrimEnd - trimStart);
 
+    const vItag = videoUrl?.match(/[?&]itag=(\d+)/)?.[1] || 'direct';
+    const aItag = audioUrl?.match(/[?&]itag=(\d+)/)?.[1] || 'none';
+    console.log(`[ClientFFmpegEngine] 🎬 Starting client-side export: format=${format}, quality=${_quality}, duration=${duration.toFixed(1)}s (Trim: ${trimStart}s - ${effectiveTrimEnd}s)`);
+    console.log(`[ClientFFmpegEngine] 📦 Selected tracks: Video itag=${vItag}, Audio itag=${aItag}`);
+
     // ── 1. AUDIO-ONLY EXPORT ──────────────────────────────────────────────────
     if (isAudioOnly) {
       const sourceUrl = audioUrl || videoUrl;
@@ -523,9 +528,12 @@ export class ClientFFmpegEngine {
 
     if (onProgress) onProgress('Processing clip...', 78);
 
+    const isAudioWebm = Boolean(audioUrl?.includes('webm') || audioUrl?.includes('mime=audio%2Fwebm') || audioUrl?.includes('itag=251'));
+    const audioInputName = isAudioWebm ? 'input_a.webm' : 'input_a.m4a';
+
     await ffmpeg.writeFile('input_v.mp4', videoSlice.bytes);
     if (audioSlice) {
-      await ffmpeg.writeFile('input_a.m4a', audioSlice.bytes);
+      await ffmpeg.writeFile(audioInputName, audioSlice.bytes);
     }
 
     const videoFilter = buildVideoFilter(aspectRatio, fitMode, cropPosition, cropBox);
@@ -544,13 +552,14 @@ export class ClientFFmpegEngine {
         '-y',
         '-ss', vRelativeStart.toFixed(3),
         '-i', 'input_v.mp4',
-        ...(audioSlice ? ['-ss', aRelativeStart.toFixed(3), '-i', 'input_a.m4a'] : []),
+        ...(audioSlice ? ['-ss', aRelativeStart.toFixed(3), '-i', audioInputName] : []),
         '-t', duration.toFixed(3),
         '-c:v', 'copy',
         '-c:a', 'aac',
         '-b:a', '192k',
         ...(audioSlice ? ['-map', '0:v:0', '-map', '1:a:0'] : ['-map', '0:v:0', '-map', '0:a:0?']),
         '-avoid_negative_ts', 'make_zero',
+        '-shortest',
         '-movflags', '+faststart',
         outName,
       ];
@@ -560,10 +569,13 @@ export class ClientFFmpegEngine {
         const outputBytes = await ffmpeg.readFile(outName) as Uint8Array;
         try {
           await ffmpeg.deleteFile('input_v.mp4');
-          if (audioSlice) await ffmpeg.deleteFile('input_a.m4a');
+          if (audioSlice) await ffmpeg.deleteFile(audioInputName);
           await ffmpeg.deleteFile(outName);
         } catch {}
         const blob = new Blob([outputBytes.buffer as ArrayBuffer], { type: 'video/mp4' });
+        if (blob.size < 50000) {
+          throw new Error(`In-browser video rendering generated incomplete file (${blob.size} bytes).`);
+        }
         return { blob, sizeBytes: blob.size };
       }
       console.warn('[ClientFFmpegEngine] Stream copy exited with code', copyExit, '- falling back to transcode');
@@ -576,7 +588,7 @@ export class ClientFFmpegEngine {
       '-y',
       '-ss', vRelativeStart.toFixed(3),
       '-i', 'input_v.mp4',
-      ...(audioSlice ? ['-ss', aRelativeStart.toFixed(3), '-i', 'input_a.m4a'] : []),
+      ...(audioSlice ? ['-ss', aRelativeStart.toFixed(3), '-i', audioInputName] : []),
       '-t', duration.toFixed(3),
       ...(videoFilter ? ['-vf', videoFilter] : []),
       '-c:v', 'libx264',
@@ -587,6 +599,7 @@ export class ClientFFmpegEngine {
       '-b:a', '192k',
       ...(audioSlice ? ['-map', '0:v:0', '-map', '1:a:0'] : []),
       '-avoid_negative_ts', 'make_zero',
+      '-shortest',
       '-movflags', '+faststart',
       outName,
     ];
@@ -600,7 +613,7 @@ export class ClientFFmpegEngine {
         '-y',
         '-ss', vRelativeStart.toFixed(3),
         '-i', 'input_v.mp4',
-        ...(audioSlice ? ['-ss', aRelativeStart.toFixed(3), '-i', 'input_a.m4a'] : []),
+        ...(audioSlice ? ['-ss', aRelativeStart.toFixed(3), '-i', audioInputName] : []),
         '-t', duration.toFixed(3),
         ...(videoFilter ? ['-vf', videoFilter] : []),
         '-c:v', 'libx264',
@@ -610,6 +623,7 @@ export class ClientFFmpegEngine {
         '-c:a', 'aac',
         '-b:a', '128k',
         '-avoid_negative_ts', 'make_zero',
+        '-shortest',
         outName,
       ];
       const fallbackExit = await ffmpeg.exec(fallbackArgs);
@@ -625,11 +639,16 @@ export class ClientFFmpegEngine {
     // Clean up MEMFS files to keep browser memory lightweight
     try {
       await ffmpeg.deleteFile('input_v.mp4');
-      if (audioSlice) await ffmpeg.deleteFile('input_a.m4a');
+      if (audioSlice) await ffmpeg.deleteFile(audioInputName);
       await ffmpeg.deleteFile(outName);
     } catch {}
 
     const blob = new Blob([outputData.buffer as ArrayBuffer], { type: 'video/mp4' });
+    if (blob.size < 50000) {
+      throw new Error(`In-browser video rendering generated incomplete file (${blob.size} bytes).`);
+    }
+    const sizeMb = (blob.size / (1024 * 1024)).toFixed(2);
+    console.log(`[ClientFFmpegEngine] ✅ Export complete: generated ${sizeMb} MB Blob directly in browser.`);
     return { blob, sizeBytes: blob.size };
   }
 }

@@ -1,0 +1,263 @@
+Audit and fix ClipFlow's Google Search appearance and favicon setup.
+
+Website:
+https://clipflow.cliy.me
+
+Brand:
+ClipFlow by Cliy
+
+IMPORTANT:
+Do NOT redesign the website.
+Do NOT change the existing UI, layout, colors, functionality, authentication, backend, or video-processing logic.
+Only make SEO, metadata, favicon, structured-data, and crawlability improvements.
+
+GOALS:
+
+1. FIX THE GOOGLE SEARCH RESULT LOGO / FAVICON
+
+Google currently shows a generic globe icon beside the ClipFlow search result instead of the ClipFlow logo.
+
+Inspect the existing favicon setup and fix it properly.
+
+Requirements:
+- Use the existing ClipFlow logo if one already exists in the project.
+- Do not create a random new logo.
+- Make sure the favicon is square and preferably at least 48x48, with a higher-resolution source such as 192x192 or 512x512 if available.
+- Prefer PNG or ICO.
+- Put the favicon in the correct publicly accessible location.
+- Add the correct <link rel="icon"> tag.
+- Add apple-touch-icon if appropriate.
+- Make sure the favicon URL works directly in production.
+
+For example:
+
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/favicon.png">
+
+But first inspect the project's existing assets and use the correct path.
+
+IMPORTANT:
+Because the production site is a subdomain:
+https://clipflow.cliy.me
+
+the favicon must actually be accessible from that production hostname.
+
+Verify that:
+
+https://clipflow.cliy.me/favicon.png
+
+(or the actual favicon URL) returns the correct image and is not a 404.
+
+2. FIX GOOGLE SEO METADATA
+
+Audit the current <head> in frontend/index.html and make sure the production page has:
+
+- One clear <title>
+- One meta description
+- Canonical URL
+- OpenGraph title
+- OpenGraph description
+- OpenGraph URL
+- OpenGraph image
+- Twitter/X card metadata
+- Twitter/X title
+- Twitter/X description
+- Twitter/X image
+- favicon
+
+Brand the site consistently as:
+
+"ClipFlow by Cliy"
+
+Recommended title:
+
+ClipFlow by Cliy
+
+Description :
+Download and clip any video using direct links from YouTube, Instagram, Twitch, or Twitter. With custom clipping options, download a 10-second clip instead of a whole 4-hour video — 100% free with creator tools.
++
+Do NOT keyword stuff.
+
+3. CANONICAL URL
+
+Make sure the homepage has:
+
+<link rel="canonical" href="https://clipflow.cliy.me/">
+
+Do not accidentally canonicalize the page to cliy.me or another domain.
+
+4. OPEN GRAPH
+
+Configure the homepage for proper social previews.
+
+Use:
+
+og:title
+og:description
+og:url
+og:type
+og:image
+og:site_name
+
+The OpenGraph image must actually exist in production.
+
+For example:
+
+https://clipflow.cliy.me/og-image.png
+
+Only use this path if the file actually exists.
+
+5. TWITTER/X METADATA
+
+Keep Twitter/X metadata because it is only social sharing metadata.
+
+It does NOT connect to the Twitter/X API.
+
+Use:
+
+twitter:card
+twitter:title
+twitter:description
+twitter:image
+
+Use "summary_large_image" if there is an appropriate large social preview image.
+
+6. STRUCTURED DATA
+
+Inspect the existing structured data.
+
+If appropriate, add valid JSON-LD for:
+
+- Organization
+- WebSite
+
+Make the relationship clear:
+
+Cliy = organization/brand
+ClipFlow = product/site
+
+Do not invent fake social profiles, reviews, ratings, awards, or other information.
+
+Use the real production URL:
+
+https://clipflow.cliy.me/
+
+7. ROBOTS.TXT
+
+Check whether robots.txt exists.
+
+Make sure it does NOT accidentally block:
+
+/
+favicon files
+CSS
+JavaScript
+important assets
+
+The production site should be crawlable by Google.
+
+If appropriate, include:
+
+Sitemap: https://clipflow.cliy.me/sitemap.xml
+
+8. SITEMAP.XML
+
+Check whether sitemap.xml exists.
+
+If it does not exist, create the appropriate sitemap for the actual public ClipFlow pages.
+
+Do not put private, authenticated, dashboard, API, temporary, or user-specific URLs into the sitemap.
+
+Use:
+
+https://clipflow.cliy.me/sitemap.xml
+
+9. GOOGLE CRAWLABILITY
+
+Check all of the following:
+
+- Homepage returns HTTP 200
+- Googlebot is not blocked
+- robots.txt is valid
+- canonical URL is correct
+- favicon returns HTTP 200
+- OG image returns HTTP 200
+- sitemap returns HTTP 200
+- important CSS/JS is accessible
+- there is no accidental noindex
+- there is no accidental nofollow
+- HTTPS works correctly
+- redirects do not send the homepage somewhere unexpected
+
+Check both development configuration and the actual production build.
+
+10. DO NOT TRY TO FORCE GOOGLE
+
+Do not add fake keywords or hidden text.
+
+Do not add "ClipFlow" hundreds of times.
+
+Do not use misleading structured data.
+
+The goal is to make Google clearly understand:
+
+ClipFlow
+is a product by Cliy
+at https://clipflow.cliy.me/
+
+11. GOOGLE SEARCH CONSOLE
+
+After making the changes, give me a checklist for Google Search Console:
+
+- Inspect https://clipflow.cliy.me/
+- Request indexing
+- Submit https://clipflow.cliy.me/sitemap.xml
+- Check Page Indexing
+- Check URL Inspection
+- Check rendered HTML
+- Check favicon availability
+
+Explain that Google may continue showing an old favicon/metadata temporarily because Google Search results are cached and recrawling is not instantaneous.
+
+12. FINAL VERIFICATION
+
+After making the changes, report:
+
+A. Exact files changed
+B. Exact metadata added/changed
+C. Exact favicon location
+D. Exact production favicon URL
+E. Exact sitemap URL
+F. Exact robots.txt URL
+G. Exact canonical URL
+H. Whether robots/noindex blocks Google
+I. Whether the production build is clean
+J. Any remaining issues
+
+Most important:
+
+DO NOT just tell me that the favicon exists in the source code.
+
+Verify that the deployed production URL can actually serve the favicon and SEO assets.
+
+Do not make unrelated changes.
+
+
+
+
+
+https://www.instagram.com/clipflovv/
+https://x.com/clipflovv
+https://www.youtube.com/channel/UC_jmxgZMmWrxU7am3LD9usQ
+
+
+
+
+
+
+
+
+103.124.109.94  india mobilenet
+
+118.95.161.132  Bangalore clg wifi
+

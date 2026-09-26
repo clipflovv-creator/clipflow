@@ -11,6 +11,9 @@ import { YouTubeDownloaderService } from '../services/youtube/index.js';
 import { InstagramDownloaderService } from '../services/instagram/index.js';
 import { TwitterDownloaderService } from '../services/twitter/index.js';
 import { TwitchDownloaderService, TwitchLiveFrameService } from '../services/twitch/index.js';
+import { resolveStreamUrls, YtdlpOnlineService } from '../services/ytdlp-online/index.js';
+import { getYoutubeCookiesPath } from '../utils/cookie-resolver.util.js';
+import { logger } from '../utils/logger.util.js';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
@@ -56,7 +59,7 @@ router.get('/hls-proxy', async (req: Request, res: Response) => {
   if (!targetUrl) return res.status(400).json({ error: 'url parameter is required' });
 
   const host = req.protocol + '://' + req.get('host');
-  console.log(`\n[HLS Proxy 📡] Request for playlist: ${targetUrl.substring(0, 100)}...`);
+  logger.info('HLSProxy', `Request for playlist: ${targetUrl.substring(0, 80)}...`);
 
   try {
     const fetchHeaders: Record<string, string> = {
@@ -71,13 +74,13 @@ router.get('/hls-proxy', async (req: Request, res: Response) => {
 
     const response = await fetch(targetUrl, { headers: fetchHeaders });
     if (!response.ok) {
-      console.error(`[HLS Proxy ❌] Upstream playlist returned ${response.status} for ${targetUrl}`);
+      logger.error({ context: 'HLSProxy', summary: 'Upstream playlist error', code: response.status, targetUrl });
       return res.status(response.status).json({ error: `Upstream playlist returned ${response.status}` });
     }
 
     const m3u8Text = await response.text();
     const lines = m3u8Text.split('\n');
-    console.log(`[HLS Proxy 📝] Upstream OK (${lines.length} lines). Rewriting URLs with host: ${host}`);
+    logger.info('HLSProxy', `Upstream OK (${lines.length} lines). Rewriting URLs.`);
 
     const rewrittenLines = lines.map((line) => {
       const trimmed = line.trim();
@@ -164,8 +167,10 @@ router.get('/stream-range', async (req: Request, res: Response) => {
     if (targetUrl.includes('googlevideo.com') || targetUrl.includes('youtube.com')) {
       if (targetUrl.includes('c=IOS')) {
         userAgent = 'com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)';
+      } else if (targetUrl.includes('c=ANDROID')) {
+        userAgent = 'com.google.android.youtube/19.29.37 (Linux; U; Android 14) gzip';
       } else {
-        userAgent = 'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip';
+        userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
       }
     }
 
@@ -413,7 +418,6 @@ router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Respons
 
   const host = req.protocol + '://' + req.get('host');
   const isSegment = streamUrl.includes('.ts') || streamUrl.includes('.m4s') || streamUrl.includes('.mp4');
-  console.log(`[Proxy Stream 📥] ${isSegment ? 'Segment' : 'Stream'} fetching: ${streamUrl.substring(0, 90)}...`);
 
   try {
     const range = req.headers.range;
@@ -426,8 +430,10 @@ router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Respons
       fetchHeaders['Origin'] = 'https://www.youtube.com';
       if (streamUrl.includes('c=IOS')) {
         fetchHeaders['User-Agent'] = 'com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)';
+      } else if (streamUrl.includes('c=ANDROID')) {
+        fetchHeaders['User-Agent'] = 'com.google.android.youtube/19.29.37 (Linux; U; Android 14) gzip';
       } else {
-        fetchHeaders['User-Agent'] = 'com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip';
+        fetchHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
       }
     } else if (streamUrl.includes('twimg.com')) {
       fetchHeaders['Referer'] = 'https://x.com/';
@@ -537,7 +543,7 @@ router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Respons
 
     nodeStream.on('error', (streamErr: any) => {
       if (streamErr?.code !== 'UND_ERR_SOCKET' && !streamErr?.message?.includes('closed') && !streamErr?.message?.includes('aborted')) {
-        console.warn('[Proxy Stream Notice]', streamErr.message);
+        logger.warn('ProxyStream', streamErr.message);
       }
       try { nodeStream.destroy(); } catch {}
     });
@@ -552,7 +558,7 @@ router.get(['/proxy-stream', '/stream-range'], async (req: Request, res: Respons
 
     nodeStream.pipe(res);
   } catch (err: any) {
-    console.error('[Proxy Stream Error ❌]', err.message);
+    logger.error({ context: 'ProxyStream', summary: 'Proxy stream failed', error: err });
     if (!res.headersSent) {
       res.status(500).json({ error: `Proxy stream failed: ${err.message}` });
     }
@@ -582,14 +588,16 @@ router.post('/metadata', async (req: Request, res: Response) => {
     // Only video formats (never pick an audio-only stream as directStreamUrl which is meant for video display)
     const videoFormats = (metadata.formats || []).filter((f: any) => f.url && f.vcodec && f.vcodec !== 'none');
 
-    const directStreamUrl =
+    let directStreamUrl =
+      metadata.direct_stream_url ||
       format1080?.url ||
       format720?.url ||
       (progressiveMp4.length > 0 ? progressiveMp4[progressiveMp4.length - 1].url : undefined) ||
       (audioAndVideoFormats.length > 0 ? audioAndVideoFormats[audioAndVideoFormats.length - 1].url : undefined) ||
-      metadata.direct_stream_url ||
       metadata.url ||
       (videoFormats.length > 0 ? videoFormats[videoFormats.length - 1]?.url : undefined);
+
+    let audioStreamUrl: string | undefined = metadata.audio_stream_url;
 
     let parsedDuration = typeof metadata.duration === 'number' && metadata.duration > 0 ? metadata.duration : undefined;
     if (!parsedDuration && metadata.duration_string) {
@@ -646,6 +654,7 @@ router.post('/metadata', async (req: Request, res: Response) => {
       upload_date: metadata.upload_date,
       platform: metadata.extractor_key || metadata.extractor || 'generic',
       direct_stream_url: directStreamUrl,
+      audio_stream_url: audioStreamUrl,
       // The URL yt-dlp resolved to (VOD URL for Twitch channels).
       // Frontend should use this for /api/video/preview-segment requests.
       webpage_url: vodUrl,
@@ -783,6 +792,7 @@ router.post('/download', async (req: Request, res: Response) => {
 
     if (mode === 'server') {
       const safeTitle = cleanUnicodeFileName(customFileName, 'clipflow_clip');
+      logger.info('Download', `🚀 Server job starting: format=${format}, quality=${quality}, trim=${trimStart}s-${trimEnd}s, url=${url}`);
       // clientJobId is sent from frontend so we can emit real-time progress via Socket.io
       const clientJobId: string | undefined = req.body.clientJobId;
 
@@ -1136,6 +1146,62 @@ router.get('/thumbnail', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('Thumbnail download error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+// ─── ytdlp.online Session Management Routes ──────────────────────────────────
+// Used to manage the 5/day free-tier sessions on ytdlp.online.
+// POST /api/video/ytdlp-online/session   → add a manual browser session
+// GET  /api/video/ytdlp-online/sessions  → list all stored sessions
+// DELETE /api/video/ytdlp-online/sessions → clear all sessions
+// POST /api/video/ytdlp-online/test      → test stream URL resolution
+
+router.post('/ytdlp-online/session', (req: Request, res: Response) => {
+  const { sid, session } = req.body;
+  if (!sid || !session) {
+    return res.status(400).json({ error: 'sid and session (Flask JWT cookie value) are required' });
+  }
+  YtdlpOnlineService.addManualSession(sid, session);
+  return res.json({ success: true, message: `Session _sid=${sid} stored` });
+});
+
+router.get('/ytdlp-online/sessions', (_req: Request, res: Response) => {
+  const sessions = YtdlpOnlineService.listSessions();
+  res.json({
+    total: sessions.length,
+    active: sessions.filter((s) => !s.exhausted && s.usedCount < 5).length,
+    exhausted: sessions.filter((s) => s.exhausted).length,
+    sessions,
+  });
+});
+
+router.delete('/ytdlp-online/sessions', (_req: Request, res: Response) => {
+  YtdlpOnlineService.clearSessions();
+  res.json({ success: true, message: 'All ytdlp.online sessions cleared' });
+});
+
+router.post('/ytdlp-online/test', async (req: Request, res: Response) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url is required' });
+
+  try {
+    const cookiesFile = getYoutubeCookiesPath() || undefined;
+    const result = await resolveStreamUrls(url, YTDLP_BIN, cookiesFile);
+    res.json({
+      source: result.source,
+      videoUrl: result.videoUrl,
+      audioUrl: result.audioUrl,
+      urlCount: result.allUrls.length,
+      allUrls: result.allUrls,
+      log: result.log,
+    });
+  } catch (err: any) {
+    logger.error({
+      context: 'VideoRoutes:ytdlp-online/test',
+      summary: 'Stream resolution failed for test request',
+      targetUrl: url,
+      error: err,
+    });
+    res.status(500).json({ error: err.message || 'Stream resolution failed' });
   }
 });
 

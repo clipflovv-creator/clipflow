@@ -852,6 +852,8 @@ export default function ClipFlowEditor() {
       const effectiveTrimEnd = isTrimEnabled ? trimRange[1] : (effectiveDuration || 60);
       const effectiveFormat = downloadFormat === 'captions' ? captionFormat : downloadFormat;
 
+      console.log(`[ClipFlow] 🎬 Export started: format=${effectiveFormat}, quality=${downloadQuality || 'best'}, trim=${effectiveTrimStart}s-${effectiveTrimEnd}s`);
+
       // 0. Dedicated Subtitle / Caption Export Pipeline (SRT, VTT, TXT)
       if (downloadFormat === 'captions') {
         setDownloadProgress(20);

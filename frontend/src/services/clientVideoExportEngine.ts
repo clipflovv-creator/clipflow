@@ -83,6 +83,8 @@ export class ClientVideoExportEngine {
       .replace(/[<>:"/\\|?*]+/g, '_')
       .trim();
 
+    console.log(`[Export Engine] 🔍 Resolving streams: quality=${quality}, format=${format}, trim=${trimStart}s-${effectiveTrimEnd}s`);
+
     // Select the best direct video and audio tracks
     let currentMetadata = metadata;
     let tracks = findBestTracks(currentMetadata, quality);
@@ -96,6 +98,7 @@ export class ClientVideoExportEngine {
         (currentMetadata?.id ? `https://www.youtube.com/watch?v=${currentMetadata.id}` : undefined);
 
       if (pageUrl) {
+        console.log('[Export Engine] 🔄 Refreshing video metadata from server...');
         if (onProgress) onProgress('Preparing video...', 5);
         try {
           const res = await api.video.getMetadata(pageUrl);
@@ -107,28 +110,29 @@ export class ClientVideoExportEngine {
             }
           }
         } catch (fetchErr) {
-          console.warn('[ClientVideoExportEngine] Stream metadata refresh failed:', fetchErr);
+          console.warn('[Export Engine] Stream metadata refresh failed:', fetchErr);
         }
       }
     }
 
     if (tracks.qualityNote) {
+      console.log(`[Export Engine] ℹ️ Quality note: ${tracks.qualityNote}`);
       if (onProgress) onProgress(tracks.qualityNote, 8);
     }
 
     const videoStreamUrl = tracks.videoFormat?.url || tracks.combinedFormat?.url || currentMetadata?.direct_stream_url;
-    let audioStreamUrl = tracks.audioFormat?.url || (tracks.combinedFormat ? tracks.combinedFormat.url : null);
+    let audioStreamUrl = tracks.audioFormat?.url || (tracks.combinedFormat ? tracks.combinedFormat.url : null) || currentMetadata?.audio_stream_url || null;
 
     if (!videoStreamUrl) {
       throw new Error('Direct video stream format not found. Please reload the video or verify backend connectivity.');
     }
 
-    // If audioStreamUrl points to the exact same file as videoStreamUrl,
-    // or if the chosen video format already contains embedded audio, no separate audio stream is needed.
+    // Only nullify audioStreamUrl if the exact same URL was selected for both video and audio
+    // or if the video stream itself already contains embedded audio AND no separate audio track exists.
     const videoHasAudio = Boolean(
       tracks.videoFormat?.acodec && tracks.videoFormat.acodec !== 'none'
     );
-    if (audioStreamUrl === videoStreamUrl || videoHasAudio) {
+    if (audioStreamUrl === videoStreamUrl || (!audioStreamUrl && videoHasAudio)) {
       audioStreamUrl = null;
     }
 
@@ -138,6 +142,8 @@ export class ClientVideoExportEngine {
     const effectiveFormat = isAudioOnly ? format : 'mp4';
     const finalExt = isAudioOnly ? (format === 'mp3' ? 'wav' : format) : 'mp4';
     const finalFileName = `${safeTitle}.${finalExt}`;
+
+    console.log(`[Export Engine] ⚡ Processing clip via in-browser FFmpeg (duration: ${(effectiveTrimEnd - trimStart).toFixed(1)}s)...`);
 
     // Delegate processing to in-browser FFmpeg engine
     const result = await ClientFFmpegEngine.processClip({
@@ -162,6 +168,8 @@ export class ClientVideoExportEngine {
     });
 
     const downloadUrl = URL.createObjectURL(result.blob);
+    const sizeMb = (result.sizeBytes / (1024 * 1024)).toFixed(2);
+    console.log(`[Export Engine] ✅ Export complete! File: "${finalFileName}" (${sizeMb} MB)`);
 
     if (onProgress) onProgress('Downloading clip...', 100);
 

@@ -1,104 +1,184 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { resolveStreamUrls } from '../ytdlp-online/index.js';
+import { YouTubeInnerTubeService } from './yt-innertube.service.js';
+import { logger } from '../../utils/logger.util.js';
 
-import { getYoutubeCookieArg } from '../../utils/cookie-resolver.util.js';
-
-const execAsync = promisify(exec);
-
-// Use the same Node binary that runs this server — guarantees yt-dlp can find it for JS challenge solving.
-// process.execPath = e.g. /usr/local/bin/node on Render
-const NODE_BIN = process.execPath;
-
-function getProxyFlag(): string {
-  const proxy = process.env.YTDLP_PROXY?.trim();
-  return proxy ? `--proxy "${proxy}"` : '';
+function extractVideoId(url: string): string {
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([\w-]{11})/);
+  return match ? match[1] : 'video';
 }
 
-function getPoTokenFlag(): string {
-  const poToken = process.env.YTDLP_PO_TOKEN?.trim();
-  return poToken ? `--extractor-args "youtube:po_token=web+${poToken}"` : '';
-}
-
-interface Strategy {
-  clientArg: string;
-  useProxy: boolean;
-  useCookies: boolean; // android client rejects --cookies flag
+function formatDuration(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  if (hrs > 0) {
+    return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
 export class YouTubeMetadataService {
-  static async getMetadata(url: string, ytDlpBin: string, _retries: number = 1): Promise<any> {
-    const cookieArg = getYoutubeCookieArg();
-    const proxyFlag = getProxyFlag();
-    const poTokenFlag = getPoTokenFlag();
-    const hasProxy = Boolean(process.env.YTDLP_PROXY?.trim());
-    const hasCookies = Boolean(cookieArg);
+  /**
+   * Production-grade YouTube metadata extractor.
+   * Priority:
+   *  1. Direct Native InnerTube Player (Instant, complete metadata + all stream formats, zero binary)
+   *  2. ytdlp.online + oEmbed Fallback
+   *  3. Local yt-dlp binary Fallback
+   */
+  static async getMetadata(url: string, ytDlpBin?: string, _retries: number = 1): Promise<any> {
+    const videoId = extractVideoId(url);
+    logger.info('YouTubeMetadata', `Fetching metadata for ${videoId}...`);
 
-    // js-runtimes flag: points yt-dlp to the exact Node binary for signature/n-challenge solving
-    const jsRuntimeFlag = `--js-runtimes "node:${NODE_BIN}"`;
+    // ── Primary: Direct InnerTube Resolver ─────────────────────────────────
+    try {
+      logger.info('YouTubeMetadata', `Attempting Layer 1A: Direct InnerTube for ${videoId}`);
+      const innerTube = await YouTubeInnerTubeService.resolveVideo(url);
+      logger.info('YouTubeMetadata', `Layer 1A (InnerTube) succeeded for ${videoId} (${innerTube.formats.length} formats)`);
 
-    // Clients: android/mweb skip cookies (unsupported), web clients need JS runtime
-    const clientDefs: Array<{ arg: string; supportsCookies: boolean }> = [
-      { arg: '',                                                              supportsCookies: true  }, // default web
-      { arg: '--extractor-args "youtube:player_client=ios"',                 supportsCookies: true  }, // iOS
-      { arg: '--extractor-args "youtube:player_client=mweb"',                supportsCookies: true  }, // mobile web
-      { arg: '--extractor-args "youtube:player_client=android"',             supportsCookies: false }, // android (no cookies)
-      { arg: '--extractor-args "youtube:player_client=tv,android"',          supportsCookies: false }, // TV+android (no cookies)
-      { arg: '--extractor-args "youtube:player_client=android,ios,mweb"',    supportsCookies: false }, // mobile combo
-      { arg: '--extractor-args "youtube:player_client=visionos,android"',    supportsCookies: true  }, // visionOS
-    ];
-
-    // Build strategy list: proxy first, then no-proxy, for each client
-    const strategies: Strategy[] = [];
-    for (const { arg, supportsCookies } of clientDefs) {
-      if (hasProxy) strategies.push({ clientArg: arg, useProxy: true,  useCookies: supportsCookies && hasCookies });
-                   strategies.push({ clientArg: arg, useProxy: false, useCookies: supportsCookies && hasCookies });
+      return {
+        id: innerTube.id,
+        title: innerTube.title,
+        thumbnail: innerTube.thumbnail,
+        uploader: innerTube.uploader,
+        duration: innerTube.duration,
+        duration_string: innerTube.duration_string,
+        is_live: false,
+        live_status: 'not_live',
+        platform: 'youtube',
+        direct_stream_url: innerTube.direct_stream_url,
+        audio_stream_url: innerTube.audio_stream_url,
+        hls_manifest_url: innerTube.hls_manifest_url,
+        formats: innerTube.formats,
+        video_formats: innerTube.video_formats,
+        audio_formats: innerTube.audio_formats,
+        subtitles: {},
+        automatic_captions: {},
+        webpage_url: url,
+      };
+    } catch (err: any) {
+      logger.warn('YouTubeMetadata', `Layer 1A (InnerTube) failed: ${err?.message || err}. Falling back to cascading resolver...`);
     }
 
-    const baseFlags = `--no-check-certificate --no-playlist --dump-json`;
+    // ── Secondary: Cascading Stream Resolver (ytdlp.online / local) ─────────
+    const stream = await resolveStreamUrls(url, ytDlpBin);
 
-    let lastErr: any;
-    let lowResFallback: any = null;
+    // 2. Fetch fast public oEmbed metadata (title, author, thumbnail)
+    let title = 'YouTube Video';
+    let uploader = 'YouTube Creator';
+    let thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
-    for (let attempt = 0; attempt < strategies.length; attempt++) {
-      const { clientArg, useProxy, useCookies } = strategies[attempt];
-      const proxy = useProxy ? proxyFlag : (hasProxy ? '--proxy ""' : '');
+    try {
+      const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (oembedRes.ok) {
+        const oembedData: any = await oembedRes.json();
+        title = oembedData.title || title;
+        uploader = oembedData.author_name || uploader;
+        if (oembedData.thumbnail_url) thumbnail = oembedData.thumbnail_url;
+      }
+    } catch (_) {
+      // Keep default thumbnail
+    }
 
-      const flags = [
-        jsRuntimeFlag,
-        clientArg,
-        poTokenFlag,
-        proxy,
-        useCookies ? cookieArg : '',
-        baseFlags,
-      ].filter(Boolean).join(' ');
-
-      const cmd = `"${ytDlpBin}" ${flags} "${url}"`;
-
-      try {
-        const { stdout } = await execAsync(cmd, { maxBuffer: 1024 * 1024 * 100 });
-        const parsed = JSON.parse(stdout);
-        const videoFormats = (parsed.formats || []).filter(
-          (f: any) => f.url && f.vcodec && f.vcodec !== 'none'
-        );
-        const hasHd = videoFormats.some((f: any) => (f.height || 0) >= 720);
-
-        if (hasHd || videoFormats.length >= 3) {
-          console.log(`[YouTube Metadata] Strategy ${attempt + 1} succeeded (client=${clientArg || 'default'}, proxy=${useProxy})`);
-          return parsed;
-        }
-
-        if (!lowResFallback && parsed) lowResFallback = parsed;
-      } catch (err: any) {
-        lastErr = err;
-        const fullMsg = (err?.stderr || err?.message || String(err)).trim();
-        console.warn(`[YouTube Metadata] Strategy ${attempt + 1} failed (client=${clientArg || 'default'}, proxy=${useProxy}):\n${fullMsg}`);
-        if (attempt < strategies.length - 1) {
-          await new Promise((r) => setTimeout(r, 600));
-        }
+    // 3. Extract exact duration from googlevideo stream URL (dur=... query param)
+    let parsedDuration: number | undefined;
+    for (const u of stream.allUrls) {
+      const durMatch = u.match(/[?&]dur=([\d.]+)/);
+      if (durMatch && durMatch[1]) {
+        parsedDuration = Math.round(parseFloat(durMatch[1]));
+        break;
       }
     }
 
-    if (lowResFallback) return lowResFallback;
-    throw lastErr;
+    const duration = parsedDuration && parsedDuration > 0 ? parsedDuration : 180;
+    const duration_string = formatDuration(duration);
+
+    // 4. Build rich formats array matching original yt-dlp schema for ffmpeg.wasm
+    const formats = stream.allUrls.map((streamUrl, idx) => {
+      const isAudio = streamUrl.includes('mime=audio') || /[?&]itag=(251|249|250|140|258|256)(&|$)/.test(streamUrl);
+      const isManifest = streamUrl.includes('.m3u8') || streamUrl.includes('/manifest/');
+
+      const clenMatch = streamUrl.match(/[?&]clen=(\d+)/);
+      const filesize = clenMatch ? parseInt(clenMatch[1], 10) : undefined;
+
+      const itagMatch = streamUrl.match(/[?&]itag=(\d+)/);
+      const itag = itagMatch ? itagMatch[1] : undefined;
+
+      if (isAudio) {
+        return {
+          format_id: itag || `audio-${idx}`,
+          ext: streamUrl.includes('webm') ? 'webm' : 'm4a',
+          url: streamUrl,
+          vcodec: 'none',
+          acodec: streamUrl.includes('webm') ? 'opus' : 'mp4a.40.2',
+          resolution: 'audio only',
+          filesize,
+          filesize_approx: filesize,
+          abr: 160,
+          format_note: 'audio',
+        };
+      }
+
+      return {
+        format_id: itag || (isManifest ? 'hls' : `video-${idx}`),
+        ext: 'mp4',
+        url: streamUrl,
+        vcodec: 'avc1.640028',
+        acodec: 'none',
+        resolution: '1920x1080',
+        height: 1080,
+        width: 1920,
+        fps: 30,
+        filesize,
+        filesize_approx: filesize,
+        format_note: '1080p',
+      };
+    });
+
+    const directStreamUrl = stream.videoUrl || stream.allUrls[0];
+    const audioStreamUrl = stream.audioUrl;
+
+    const videoFormats = formats.filter((f) => f.vcodec && f.vcodec !== 'none');
+    const audioFormats = formats.filter((f) => f.acodec && f.acodec !== 'none');
+
+    // Ensure audio format entry exists if audioStreamUrl is present
+    if (audioStreamUrl && !audioFormats.some((a) => a.url === audioStreamUrl)) {
+      const audioEntry = {
+        format_id: '140',
+        ext: 'm4a',
+        url: audioStreamUrl,
+        vcodec: 'none',
+        acodec: 'mp4a.40.2',
+        resolution: 'audio only',
+        filesize: undefined as number | undefined,
+        filesize_approx: undefined as number | undefined,
+        abr: 160,
+        format_note: 'audio',
+      };
+      formats.push(audioEntry);
+      audioFormats.push(audioEntry);
+    }
+
+    return {
+      id: videoId,
+      title,
+      thumbnail,
+      uploader,
+      duration,
+      duration_string,
+      is_live: false,
+      live_status: 'not_live',
+      platform: 'youtube',
+      direct_stream_url: directStreamUrl,
+      audio_stream_url: audioStreamUrl,
+      formats,
+      video_formats: videoFormats,
+      audio_formats: audioFormats,
+      subtitles: {},
+      automatic_captions: {},
+      webpage_url: url,
+    };
   }
 }

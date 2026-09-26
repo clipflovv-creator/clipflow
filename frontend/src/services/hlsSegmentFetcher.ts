@@ -41,8 +41,7 @@ export interface SegmentFetchProgress {
   message: string;
 }
 
-import { resolveRelayUrl } from './clientMediaRangeFetcher.js';
-import { api } from './api';
+import { resolveRelayUrl, unwrapStreamUrl } from './clientMediaRangeFetcher.js';
 
 /**
  * Resolves a relative or absolute URL against a base URL.
@@ -63,13 +62,8 @@ export async function parseHlsManifest(
   manifestUrl: string,
   quality?: string
 ): Promise<ManifestParseResult> {
-  let targetManifestUrl = manifestUrl;
-  if (
-    (targetManifestUrl.includes('cloudfront.net') || targetManifestUrl.includes('ttvnw.net')) &&
-    !api.video.isProxiedUrl(targetManifestUrl)
-  ) {
-    targetManifestUrl = resolveRelayUrl(targetManifestUrl);
-  }
+  const cleanManifestUrl = unwrapStreamUrl(manifestUrl);
+  const targetManifestUrl = resolveRelayUrl(cleanManifestUrl);
   const res = await fetch(targetManifestUrl);
   if (!res.ok) {
     throw new Error(`Failed to fetch HLS manifest (${res.status}): ${manifestUrl}`);
@@ -280,13 +274,8 @@ export async function fetchRequiredHlsSegments(
 
   if (resolvedInitUrl) {
     try {
-      let fetchUrl = resolvedInitUrl;
-      if (
-        (fetchUrl.includes('cloudfront.net') || fetchUrl.includes('ttvnw.net')) &&
-        !api.video.isProxiedUrl(fetchUrl)
-      ) {
-        fetchUrl = resolveRelayUrl(fetchUrl);
-      }
+      const cleanInit = unwrapStreamUrl(resolvedInitUrl);
+      const fetchUrl = resolveRelayUrl(cleanInit);
       const initRes = await fetch(fetchUrl);
       if (initRes.ok) {
         initBuffer = await initRes.arrayBuffer();
@@ -296,21 +285,22 @@ export async function fetchRequiredHlsSegments(
     }
   }
 
-  // Concurrent fetcher with controlled concurrency (e.g. 4 streams)
-  const CONCURRENCY = 4;
+  // Concurrent fetcher with high concurrency (12 streams) for near-instant multi-chunk download
+  const CONCURRENCY = Math.min(12, Math.max(4, totalSegments));
   const segmentBuffers: ArrayBuffer[] = new Array(totalSegments);
   let loadedCount = 0;
   let totalBytes = initBuffer ? initBuffer.byteLength : 0;
+  const fetchStartTime = performance.now();
 
   const fetchSegment = async (item: HlsSegment, sliceIndex: number) => {
-    let fetchUrl = item.resolvedUrl;
-    if (
-      (fetchUrl.includes('cloudfront.net') || fetchUrl.includes('ttvnw.net')) &&
-      !api.video.isProxiedUrl(fetchUrl)
-    ) {
-      fetchUrl = resolveRelayUrl(fetchUrl);
-    }
-    const res = await fetch(fetchUrl);
+    const cleanSegUrl = unwrapStreamUrl(item.resolvedUrl);
+    const fetchUrl = resolveRelayUrl(cleanSegUrl);
+    const res = await fetch(fetchUrl, {
+      headers: {
+        'Referer': 'https://www.twitch.tv/',
+        'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko',
+      },
+    });
     if (!res.ok) {
       throw new Error(`Failed to download video segment ${item.index} (${res.status})`);
     }
@@ -343,6 +333,10 @@ export async function fetchRequiredHlsSegments(
   });
 
   await Promise.all(workers);
+
+  const fetchElapsed = ((performance.now() - fetchStartTime) / 1000).toFixed(2);
+  const sizeMb = (totalBytes / (1024 * 1024)).toFixed(2);
+  console.log(`[Twitch Fetcher] ⚡ Fetched ${totalSegments} segments (${sizeMb} MB) in ${fetchElapsed}s (${CONCURRENCY} parallel streams)`);
 
   // Concatenate initialization segment + all media segments into a single contiguous Uint8Array
   const combined = new Uint8Array(totalBytes);

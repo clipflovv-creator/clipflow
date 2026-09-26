@@ -1,0 +1,188 @@
+# ⚡ Direct Website Architecture: ytdlp.online Primary Stream Resolver
+
+## 1. System Overview & Core Philosophy
+
+This module establishes **`ytdlp.online`** as the **PRIMARY (MAIN)** stream extraction engine for the ClipFlow downloader, reserving the local `yt-dlp.exe` binary purely as an emergency **FALLBACK**.
+
+```
+                           Incoming Download / Metadata Request
+                                           │
+                                           ▼
+                     ┌───────────────────────────────────────────┐
+                     │   resolveStreamUrls(targetUrl, ytDlpBin)  │
+                     └─────────────────────┬─────────────────────┘
+                                           │
+                        ┌──────────────────┴──────────────────┐
+                        ▼                                     ▼
+            [MAIN] ytdlp.online API                  [FALLBACK] Local yt-dlp
+         (Native HTTP/2 via node:http2)            (--get-url --force-ipv4)
+                        │                                     │
+           ┌────────────┴────────────┐                        │
+        Success                    Error / 429                │
+           │                             └──────────►─────────┘
+           ▼                                                  ▼
+   { source: 'online',                                { source: 'local',
+     videoUrl: 'https://manifest...',                   videoUrl: 'https://...',
+     audioUrl: 'https://rr2...' }                       audioUrl: 'https://...' }
+```
+
+---
+
+## 2. Key Discoveries & Rate Limit Mechanism
+
+1. **Rate Limit Key**:
+   - Rate limits are tracked **STRICTLY by the `_sid` cookie**.
+   - Cloudflare bot score, IP address, TLS fingerprint, and User-Agent are **NOT** rate-limiting factors.
+   - Dropping `_sid` and requesting `https://ytdlp.online/` gives a brand new `_sid` with a fresh 5-request quota.
+
+2. **HTTP/2 Protocol Requirement**:
+   - `ytdlp.online` runs behind Cloudflare and requires **HTTP/2**.
+   - Standard HTTP/1.1 requests return `505 HTTP Version Not Supported` or `403 Forbidden`.
+   - Windows default `curl.exe` lacks HTTP/2 support (`the installed libcurl version does not support this`).
+   - **Solution**: Built directly using Node.js native `node:http2` client — zero external binary dependency, cross-platform (Windows, Linux, macOS), and ultra-fast.
+
+3. **Quota & Rolling 30-Minute Window**:
+   - Each session (`_sid` + `session` Flask JWT) has 5 requests.
+   - Server returns exact quota in `X-Ratelimit-Remaining: <0-5>`.
+   - The service synchronizes with `X-Ratelimit-Remaining` after every call.
+   - When quota reaches 0, the service automatically mints a new session.
+
+---
+
+## 3. Module Structure & Files
+
+```
+backend/
+├── src/
+│   ├── services/
+│   │   └── ytdlp-online/
+│   │       ├── index.ts                   # Public exports (resolveStreamUrls, YtdlpOnlineService)
+│   │       ├── ytdlp-online.service.ts    # Native HTTP/2 client, session store & SSE parser
+│   │       └── ytdlp-online.resolver.ts   # Resolver orchestrator (MAIN -> FALLBACK)
+│   ├── routes/
+│   │   └── video.routes.ts                # Video routes & Admin testing endpoints
+│   └── utils/
+│       └── binary-resolver.util.ts        # yt-dlp.exe & ffmpeg.exe locator
+└── data/
+    └── ytdlp-online-sessions.json         # Persisted active & exhausted sessions
+```
+
+---
+
+## 4. API Endpoints & Verification
+
+### A. Test Stream Resolution (Live Test)
+```http
+POST /api/video/ytdlp-online/test
+Content-Type: application/json
+
+{
+  "url": "https://youtu.be/4XyPdnTz_Q0"
+}
+```
+**Response:**
+```json
+{
+  "source": "online",
+  "videoUrl": "https://manifest.googlevideo.com/api/manifest/hls_playlist/...",
+  "audioUrl": "https://rr2---sn-gxuo03g-3c2s.googlevideo.com/videoplayback?...",
+  "urlCount": 2,
+  "allUrls": [
+    "https://manifest.googlevideo.com/api/manifest/hls_playlist/...",
+    "https://rr2---sn-gxuo03g-3c2s.googlevideo.com/videoplayback?..."
+  ],
+  "log": [
+    "Running command: --get-url https://youtu.be/4XyPdnTz_Q0 -o \"%(title)s.%(ext)s\"",
+    "https://manifest.googlevideo.com/api/manifest/hls_playlist/...",
+    "https://rr2---sn-gxuo03g-3c2s.googlevideo.com/videoplayback?...",
+    "Command execution completed"
+  ]
+}
+```
+
+### B. List Stored Sessions & Quotas
+```http
+GET /api/video/ytdlp-online/sessions
+```
+**Response:**
+```json
+{
+  "total": 1,
+  "active": 1,
+  "exhausted": 0,
+  "sessions": [
+    {
+      "sid": "173520d0-7a87-43cf-8a21-996ffb5e9f45",
+      "sessionCookie": "eyJjc3JmX3Rva2VuIjoi...",
+      "usedCount": 1,
+      "createdAt": 1790342546000,
+      "exhausted": false
+    }
+  ]
+}
+```
+
+### C. Manually Inject a Browser Session
+```http
+POST /api/video/ytdlp-online/session
+Content-Type: application/json
+
+{
+  "sid": "6de7d654-0ca1-48e3-bf06-5708917cd9a8",
+  "session": "eyJjc3JmX3Rva2VuIjoiYzk5NzZhZjUxODE5MGU3ODI2MTA2OTcxNDQ1YTgzNDRkMmFhMDhhMCJ9..."
+}
+```
+
+### D. Clear All Sessions
+```http
+DELETE /api/video/ytdlp-online/sessions
+```
+
+---
+
+## 5. Execution Flow & Lifecycle
+
+1. **Request Received**: `resolveStreamUrls(targetUrl, ytDlpBin, cookiesFile?)` is invoked.
+2. **Session Retrieval**:
+   - `getActiveSession()` checks `ytdlp-online-sessions.json` for a session with `usedCount < 5` and `exhausted === false`.
+   - If none exists, `mintFreshSession()` executes a cookieless `GET /` over native `http2` to `https://ytdlp.online` and parses the `Set-Cookie` header for new `_sid` and `session` tokens.
+3. **Stream Resolution**:
+   - Sends `GET /api/v1/stream?command=--get-url%20<URL>&job_id=<UUID>&source=index&engine=nightly` over HTTP/2.
+   - Headers: `Accept: text/event-stream`, `Cookie: _sid=...; session=...`.
+4. **SSE Parsing**:
+   - Reads incoming `data:` events.
+   - Extracts HLS `.m3u8` manifest (video) and direct webm/opus stream (audio).
+   - Syncs remaining quota from `X-Ratelimit-Remaining` response header.
+5. **Fallback Handling**:
+   - If HTTP 429 or rate limit reached: marks session as `exhausted: true`.
+   - If network or extraction error occurs: immediately invokes local `yt-dlp --get-url --force-ipv4` and returns `{ source: 'local', ... }`.
+
+---
+
+## 6. How to Test in yt down
+
+You can test in multiple ways:
+
+1. **Automated Unit Test**:
+   ```bash
+   cd backend
+   npx tsx src/test-resolver.ts
+   ```
+
+2. **Via Backend API (Postman / cURL / ThunderClient)**:
+   ```bash
+   curl -X POST http://localhost:3001/api/video/ytdlp-online/test \
+     -H "Content-Type: application/json" \
+     -d "{\"url\": \"https://youtu.be/4XyPdnTz_Q0\"}"
+   ```
+
+3. **In Codebase**:
+   ```ts
+   import { resolveStreamUrls } from './services/ytdlp-online/index.js';
+   import { resolveYtDlpBinary } from './utils/binary-resolver.util.js';
+
+   const result = await resolveStreamUrls(url, resolveYtDlpBinary());
+   console.log('Resolved via:', result.source); // 'online' or 'local'
+   console.log('Video stream:', result.videoUrl);
+   console.log('Audio stream:', result.audioUrl);
+   ```
